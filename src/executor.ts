@@ -1,27 +1,67 @@
 /**
  * Executes gws CLI commands and returns results.
  *
- * Windows challenge: gws is an npm global (.cmd wrapper) which requires
- * shell:true to spawn, but cmd.exe mangles JSON in arguments. Solution:
- * wrap JSON args in double quotes with escaped inner quotes for cmd.exe.
+ * Security: all user-supplied values are passed through sanitization to
+ * prevent command injection, especially on Windows where shell:true is
+ * required for .cmd wrappers.
  */
 
 import { spawn } from "node:child_process";
+import { resolve, normalize } from "node:path";
+import { existsSync } from "node:fs";
 import type { ToolDef } from "./services.js";
 
 /** Max output size before truncation (characters) */
 const MAX_OUTPUT = 100_000;
 
+/** Characters that are dangerous in cmd.exe when shell:true */
+const CMD_METACHAR_RE = /[&|<>^%()!]/g;
+
+/**
+ * Escape a string for safe use as a cmd.exe argument.
+ * Wraps in double quotes and escapes inner quotes + metacharacters.
+ */
+function escapeForCmd(value: string): string {
+  // Escape cmd.exe metacharacters with ^ and double quotes with \"
+  const escaped = value.replace(CMD_METACHAR_RE, "^$&").replace(/"/g, '\\"');
+  return `"${escaped}"`;
+}
+
 /**
  * Escape a JSON string for passing as a CLI argument.
- * On Windows with shell:true, cmd.exe splits on spaces unless the arg is
- * wrapped in double quotes. Inner double quotes must be escaped with backslash.
+ * On Windows with shell:true, cmd.exe interprets metacharacters unless escaped.
  */
 function escapeJsonArg(json: string): string {
   if (process.platform === "win32") {
-    return '"' + json.replace(/"/g, '\\"') + '"';
+    return escapeForCmd(json);
   }
   return json;
+}
+
+/**
+ * Validate and sanitize a file upload path.
+ * Rejects paths containing shell metacharacters or path traversal sequences.
+ */
+function sanitizeUploadPath(rawPath: string): string {
+  // Reject shell metacharacters
+  if (CMD_METACHAR_RE.test(rawPath) || /[;`$]/.test(rawPath)) {
+    throw new Error(`Upload path contains disallowed characters: ${rawPath}`);
+  }
+
+  // Resolve to absolute and normalize (collapses ../ etc.)
+  const resolved = resolve(normalize(rawPath));
+
+  // Reject if the resolved path still contains traversal indicators
+  if (rawPath.includes("..")) {
+    throw new Error(`Upload path must not contain path traversal (..): ${rawPath}`);
+  }
+
+  // Verify the file exists
+  if (!existsSync(resolved)) {
+    throw new Error(`Upload file does not exist: ${resolved}`);
+  }
+
+  return resolved;
 }
 
 export interface ExecResult {
@@ -74,16 +114,22 @@ function buildArgs(
     }
   }
 
-  // File upload
+  // File upload — validate path before passing to CLI
   if (tool.supportsUpload && args.uploadPath) {
-    cliArgs.push("--upload", String(args.uploadPath));
+    const safePath = sanitizeUploadPath(String(args.uploadPath));
+    if (process.platform === "win32") {
+      cliArgs.push("--upload", escapeForCmd(safePath));
+    } else {
+      cliArgs.push("--upload", safePath);
+    }
   }
 
   return cliArgs;
 }
 
 /**
- * Spawn gws and collect output.
+ * Spawn gws and collect output, enforcing output size limits during
+ * accumulation to prevent unbounded memory consumption.
  */
 function spawnGws(
   gwsBinary: string,
@@ -98,12 +144,21 @@ function spawnGws(
 
     let stdout = "";
     let stderr = "";
+    let stdoutLimitReached = false;
 
     proc.stdout.on("data", (data: Buffer) => {
+      if (stdoutLimitReached) return;
       stdout += data.toString();
+      if (stdout.length > MAX_OUTPUT) {
+        stdoutLimitReached = true;
+        stdout = stdout.slice(0, MAX_OUTPUT) + "\n\n[Output truncated]";
+      }
     });
     proc.stderr.on("data", (data: Buffer) => {
-      stderr += data.toString();
+      // Cap stderr too to prevent memory abuse
+      if (stderr.length < MAX_OUTPUT) {
+        stderr += data.toString();
+      }
     });
 
     proc.on("error", reject);
@@ -133,16 +188,11 @@ export async function executeGws(
   try {
     const { stdout, stderr } = await spawnGws(gwsBinary, cliArgs);
 
-    let output = stdout;
-    if (output.length > MAX_OUTPUT) {
-      output = output.slice(0, MAX_OUTPUT) + "\n\n[Output truncated]";
-    }
-
     if (stderr) {
       console.error(`[gws-mcp] stderr: ${stderr}`);
     }
 
-    return { success: true, output };
+    return { success: true, output: stdout || "(empty response)" };
   } catch (err: unknown) {
     const error = err as { message?: string };
     const message = error.message || "Unknown error";
