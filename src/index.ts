@@ -23,6 +23,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { execFileSync } from "node:child_process";
 import { getToolsForServices, ALL_SERVICES, type ToolDef } from "./services.js";
 import { executeGws } from "./executor.js";
 
@@ -59,6 +60,27 @@ EXAMPLE:
   }
 
   return { services, gwsBinary };
+}
+
+/**
+ * Validate that the gws binary exists and is reachable.
+ * Uses `where` (Windows) or `which` (Unix) for bare names,
+ * or checks that a path resolves to an existing file.
+ */
+function validateGwsBinary(gwsBinary: string): void {
+  // Reject shell metacharacters in the binary path
+  if (/[&|<>^%();`$!]/.test(gwsBinary)) {
+    console.error(`[gws-mcp] FATAL: --gws-path contains disallowed characters: ${gwsBinary}`);
+    process.exit(1);
+  }
+
+  try {
+    const whichCmd = process.platform === "win32" ? "where" : "which";
+    execFileSync(whichCmd, [gwsBinary], { stdio: "ignore" });
+  } catch {
+    console.error(`[gws-mcp] FATAL: gws binary not found: "${gwsBinary}". Is gws installed and on PATH?`);
+    process.exit(1);
+  }
 }
 
 // ── Zod schema generation ──────────────────────────────────────────────
@@ -100,6 +122,8 @@ function buildZodSchema(tool: ToolDef): Record<string, z.ZodTypeAny> {
 
 async function main() {
   const { services, gwsBinary } = parseArgs();
+
+  validateGwsBinary(gwsBinary);
 
   const tools = getToolsForServices(services);
 
