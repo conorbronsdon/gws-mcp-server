@@ -1,5 +1,8 @@
 # gws-mcp-server
 
+[![npm version](https://img.shields.io/npm/v/gws-mcp-server)](https://www.npmjs.com/package/gws-mcp-server)
+[![license](https://img.shields.io/npm/l/gws-mcp-server)](./LICENSE)
+
 MCP server that exposes [Google Workspace CLI (`gws`)](https://github.com/googleworkspace/cli) operations as [Model Context Protocol](https://modelcontextprotocol.io/) tools.
 
 ## Why?
@@ -31,9 +34,9 @@ npm install && npm run build
 {
   "mcpServers": {
     "google-workspace": {
-      "command": "node",
+      "command": "npx",
       "args": [
-        "/path/to/gws-mcp-server/build/index.js",
+        "gws-mcp-server",
         "--services", "drive,sheets,calendar,docs,gmail"
       ]
     }
@@ -47,9 +50,9 @@ npm install && npm run build
 {
   "mcpServers": {
     "google-workspace": {
-      "command": "node",
+      "command": "npx",
       "args": [
-        "/path/to/gws-mcp-server/build/index.js",
+        "gws-mcp-server",
         "--services", "drive,sheets,calendar"
       ]
     }
