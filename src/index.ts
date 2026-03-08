@@ -38,7 +38,13 @@ function parseArgs(): { services: string[]; gwsBinary: string } {
     if (args[i] === "--services" || args[i] === "-s") {
       const val = args[++i];
       if (val) {
-        services = val.split(",").map((s) => s.trim().toLowerCase());
+        const requested = val.split(",").map((s) => s.trim().toLowerCase());
+        const invalid = requested.filter((s) => !ALL_SERVICES.includes(s));
+        if (invalid.length > 0) {
+          console.error(`[gws-mcp] Unknown service(s): ${invalid.join(", ")}. Available: ${ALL_SERVICES.join(", ")}`);
+          process.exit(1);
+        }
+        services = requested;
       }
     } else if (args[i] === "--gws-path") {
       gwsBinary = args[++i] || "gws";
@@ -126,6 +132,11 @@ async function main() {
   validateGwsBinary(gwsBinary);
 
   const tools = getToolsForServices(services);
+
+  if (tools.length === 0) {
+    console.error("[gws-mcp] FATAL: No tools registered. Check --services flag.");
+    process.exit(1);
+  }
 
   console.error(`[gws-mcp] Starting with ${tools.length} tools from services: ${services.join(", ")}`);
   console.error(`[gws-mcp] Using gws binary: ${gwsBinary}`);
