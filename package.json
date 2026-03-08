@@ -1,6 +1,6 @@
 {
   "name": "gws-mcp-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server that exposes Google Workspace CLI (gws) as Model Context Protocol tools",
   "type": "module",
   "bin": {
@@ -27,6 +27,7 @@
     "google-docs",
     "gmail"
   ],
+  "mcpName": "io.github.conorbronsdon/gws-mcp-server",
   "license": "MIT",
   "engines": {
     "node": ">=18"

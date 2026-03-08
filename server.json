@@ -1,0 +1,35 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.conorbronsdon/gws-mcp-server",
+  "title": "Google Workspace MCP Server",
+  "description": "MCP server that exposes Google Workspace CLI (gws) as 23 curated Model Context Protocol tools for Drive, Sheets, Calendar, Docs, and Gmail. Select which services to expose via --services flag to avoid context bloat.",
+  "repository": {
+    "url": "https://github.com/conorbronsdon/gws-mcp-server",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "gws-mcp-server",
+      "version": "0.1.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "name": "--services",
+          "description": "Comma-separated list of Google services to expose (drive,sheets,calendar,docs,gmail). Defaults to all.",
+          "isRequired": false,
+          "default": "drive,sheets,calendar,docs,gmail"
+        },
+        {
+          "name": "--gws-path",
+          "description": "Path to the gws binary if not on PATH.",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}
