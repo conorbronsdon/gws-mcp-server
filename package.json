@@ -1,0 +1,42 @@
+{
+  "name": "gws-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server that exposes Google Workspace CLI (gws) as Model Context Protocol tools",
+  "type": "module",
+  "bin": {
+    "gws-mcp-server": "./build/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node build/index.js",
+    "lint": "tsc --noEmit"
+  },
+  "files": [
+    "build",
+    "README.md"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "google-workspace",
+    "gws",
+    "google-drive",
+    "google-sheets",
+    "google-calendar",
+    "google-docs",
+    "gmail"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}
