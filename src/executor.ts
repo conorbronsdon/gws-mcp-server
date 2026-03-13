@@ -21,7 +21,7 @@ const CMD_METACHAR_RE = /[&|<>^%()!]/g;
  * Escape a string for safe use as a cmd.exe argument.
  * Wraps in double quotes and escapes inner quotes + metacharacters.
  */
-function escapeForCmd(value: string): string {
+export function escapeForCmd(value: string): string {
   // Escape cmd.exe metacharacters with ^ and double quotes with \"
   const escaped = value.replace(CMD_METACHAR_RE, "^$&").replace(/"/g, '\\"');
   return `"${escaped}"`;
@@ -31,7 +31,7 @@ function escapeForCmd(value: string): string {
  * Escape a JSON string for passing as a CLI argument.
  * On Windows with shell:true, cmd.exe interprets metacharacters unless escaped.
  */
-function escapeJsonArg(json: string): string {
+export function escapeJsonArg(json: string): string {
   if (process.platform === "win32") {
     return escapeForCmd(json);
   }
@@ -131,7 +131,7 @@ function buildArgs(
  * Spawn gws and collect output, enforcing output size limits during
  * accumulation to prevent unbounded memory consumption.
  */
-function spawnGws(
+export function spawnGwsRaw(
   gwsBinary: string,
   args: string[],
 ): Promise<{ stdout: string; stderr: string }> {
@@ -186,7 +186,7 @@ export async function executeGws(
   console.error(`[gws-mcp] Executing: ${gwsBinary} ${cliArgs.join(" ")}`);
 
   try {
-    const { stdout, stderr } = await spawnGws(gwsBinary, cliArgs);
+    const { stdout, stderr } = await spawnGwsRaw(gwsBinary, cliArgs);
 
     if (stderr) {
       console.error(`[gws-mcp] stderr: ${stderr}`);

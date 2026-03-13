@@ -24,8 +24,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { execFileSync } from "node:child_process";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { readFileSync, unlinkSync, existsSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { getToolsForServices, ALL_SERVICES, type ToolDef } from "./services.js";
-import { executeGws } from "./executor.js";
+import { executeGws, spawnGwsRaw } from "./executor.js";
 
 // ── CLI argument parsing ───────────────────────────────────────────────
 
@@ -169,6 +173,136 @@ async function main() {
         }
       },
     );
+  }
+
+  // ── Custom tool: drive_files_download ─────────────────────────────────
+  // Downloads actual file content (not just metadata) from Google Drive.
+  // Uses alt=media for binary/text files, or export for Google-native files.
+  if (services.includes("drive")) {
+    const GOOGLE_NATIVE_TYPES = new Set([
+      "application/vnd.google-apps.document",
+      "application/vnd.google-apps.spreadsheet",
+      "application/vnd.google-apps.presentation",
+      "application/vnd.google-apps.drawing",
+    ]);
+
+    const EXPORT_DEFAULTS: Record<string, string> = {
+      "application/vnd.google-apps.document": "text/plain",
+      "application/vnd.google-apps.spreadsheet": "text/csv",
+      "application/vnd.google-apps.presentation": "text/plain",
+      "application/vnd.google-apps.drawing": "image/png",
+    };
+
+    server.tool(
+      "drive_files_download",
+      "Download a file's content from Google Drive. Returns the text content for text files, or a base64-encoded string for binary files. For Google Docs/Sheets/Slides, exports to a readable format (plain text by default).",
+      {
+        fileId: z.string().describe("The file ID to download"),
+        supportsAllDrives: z.boolean().optional().describe("Support shared drives (set true for shared drive files)"),
+        exportMimeType: z.string().optional().describe("For Google-native files (Docs/Sheets/Slides): export format. Defaults to text/plain for Docs, text/csv for Sheets. Examples: text/plain, text/csv, application/pdf"),
+      },
+      async (args) => {
+        const tmpFile = join(tmpdir(), `gws-dl-${randomBytes(8).toString("hex")}`);
+
+        try {
+          // First, get metadata to determine file type
+          const metaParams: Record<string, unknown> = {
+            fileId: args.fileId,
+            fields: "mimeType,name,size",
+          };
+          if (args.supportsAllDrives) metaParams.supportsAllDrives = true;
+
+          const metaParamsJson = JSON.stringify(metaParams);
+          const metaEscaped = process.platform === "win32"
+            ? (await import("./executor.js")).escapeJsonArg(metaParamsJson)
+            : metaParamsJson;
+
+          const metaResult = await spawnGwsRaw(gwsBinary, [
+            "drive", "files", "get", "--params", metaEscaped,
+          ]);
+          const meta = JSON.parse(metaResult.stdout);
+          const fileMimeType: string = meta.mimeType || "";
+          const fileName: string = meta.name || "unknown";
+          const isGoogleNative = GOOGLE_NATIVE_TYPES.has(fileMimeType);
+
+          let cliArgs: string[];
+
+          if (isGoogleNative) {
+            // Use export endpoint for Google-native files
+            const exportMime = args.exportMimeType || EXPORT_DEFAULTS[fileMimeType] || "text/plain";
+            const exportParams: Record<string, unknown> = {
+              fileId: args.fileId,
+              mimeType: exportMime,
+            };
+            const paramsJson = JSON.stringify(exportParams);
+            const escaped = process.platform === "win32"
+              ? (await import("./executor.js")).escapeJsonArg(paramsJson)
+              : paramsJson;
+
+            cliArgs = ["drive", "files", "export", "--params", escaped, "-o", tmpFile];
+          } else {
+            // Use alt=media for regular files
+            const dlParams: Record<string, unknown> = {
+              fileId: args.fileId,
+              alt: "media",
+            };
+            if (args.supportsAllDrives) dlParams.supportsAllDrives = true;
+
+            const paramsJson = JSON.stringify(dlParams);
+            const escaped = process.platform === "win32"
+              ? (await import("./executor.js")).escapeJsonArg(paramsJson)
+              : paramsJson;
+
+            cliArgs = ["drive", "files", "get", "--params", escaped, "-o", tmpFile];
+          }
+
+          console.error(`[gws-mcp] Downloading ${fileName} (${fileMimeType}) to ${tmpFile}`);
+          await spawnGwsRaw(gwsBinary, cliArgs);
+
+          if (!existsSync(tmpFile)) {
+            return {
+              content: [{ type: "text" as const, text: "Error: Download produced no output file" }],
+              isError: true,
+            };
+          }
+
+          // Determine if content is text or binary
+          const isText = fileMimeType.startsWith("text/")
+            || fileMimeType.includes("json")
+            || fileMimeType.includes("xml")
+            || fileMimeType.includes("yaml")
+            || fileMimeType.includes("csv")
+            || isGoogleNative;
+
+          let content: string;
+          if (isText) {
+            content = readFileSync(tmpFile, "utf-8");
+            // Truncate if too large
+            if (content.length > 100_000) {
+              content = content.slice(0, 100_000) + "\n\n[Content truncated at 100,000 characters]";
+            }
+          } else {
+            const buf = readFileSync(tmpFile);
+            content = `[Binary file: ${fileName} (${fileMimeType}, ${buf.length} bytes)]\n\nBase64 content (first 50KB):\n${buf.toString("base64").slice(0, 50_000)}`;
+          }
+
+          return {
+            content: [{ type: "text" as const, text: content }],
+          };
+        } catch (err: unknown) {
+          const error = err as { message?: string };
+          return {
+            content: [{ type: "text" as const, text: `Error downloading file: ${error.message || "Unknown error"}` }],
+            isError: true,
+          };
+        } finally {
+          // Clean up temp file
+          try { if (existsSync(tmpFile)) unlinkSync(tmpFile); } catch { /* ignore */ }
+        }
+      },
+    );
+
+    console.error("[gws-mcp] Registered custom tool: drive_files_download");
   }
 
   // Connect via stdio
