@@ -76,8 +76,9 @@ EXAMPLE:
  * Validate that the gws binary exists and is reachable.
  * Uses `where` (Windows) or `which` (Unix) for bare names,
  * or checks that a path resolves to an existing file.
+ * Returns true if valid, false if not found (server continues but tools will error).
  */
-function validateGwsBinary(gwsBinary: string): void {
+function validateGwsBinary(gwsBinary: string): boolean {
   // Reject shell metacharacters in the binary path
   if (/[&|<>^%();`$!]/.test(gwsBinary)) {
     console.error(`[gws-mcp] FATAL: --gws-path contains disallowed characters: ${gwsBinary}`);
@@ -87,9 +88,10 @@ function validateGwsBinary(gwsBinary: string): void {
   try {
     const whichCmd = process.platform === "win32" ? "where" : "which";
     execFileSync(whichCmd, [gwsBinary], { stdio: "ignore" });
+    return true;
   } catch {
-    console.error(`[gws-mcp] FATAL: gws binary not found: "${gwsBinary}". Is gws installed and on PATH?`);
-    process.exit(1);
+    console.error(`[gws-mcp] Warning: gws binary not found: "${gwsBinary}". Tools will error until gws is installed.`);
+    return false;
   }
 }
 
@@ -133,7 +135,7 @@ function buildZodSchema(tool: ToolDef): Record<string, z.ZodTypeAny> {
 async function main() {
   const { services, gwsBinary } = parseArgs();
 
-  validateGwsBinary(gwsBinary);
+  const gwsAvailable = validateGwsBinary(gwsBinary);
 
   const tools = getToolsForServices(services);
 
@@ -147,7 +149,7 @@ async function main() {
 
   const server = new McpServer({
     name: "gws-mcp-server",
-    version: "0.1.0",
+    version: "0.1.3",
   });
 
   // Register each tool
