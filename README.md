@@ -1,5 +1,9 @@
 # gws-mcp-server
 
+<a href="https://glama.ai/mcp/servers/conorbronsdon/gws-mcp-server">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/conorbronsdon/gws-mcp-server/badge" alt="gws-mcp-server MCP server" />
+</a>
+
 [![npm version](https://img.shields.io/npm/v/gws-mcp-server)](https://www.npmjs.com/package/gws-mcp-server)
 [![license](https://img.shields.io/npm/l/gws-mcp-server)](./LICENSE)
 
