@@ -7,12 +7,12 @@
     "url": "https://github.com/conorbronsdon/gws-mcp-server",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.1.2",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "gws-mcp-server",
-      "version": "0.1.0",
+      "version": "0.1.2",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
