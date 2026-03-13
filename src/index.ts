@@ -26,7 +26,7 @@ import { z } from "zod";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { readFileSync, unlinkSync, existsSync } from "node:fs";
+import { readFileSync, unlinkSync, existsSync, copyFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { getToolsForServices, ALL_SERVICES, type ToolDef } from "./services.js";
 import { executeGws, spawnGwsRaw } from "./executor.js";
@@ -198,19 +198,20 @@ async function main() {
       "Download a file's content from Google Drive. Returns the text content for text files, or a base64-encoded string for binary files. For Google Docs/Sheets/Slides, exports to a readable format (plain text by default).",
       {
         fileId: z.string().describe("The file ID to download"),
-        supportsAllDrives: z.boolean().optional().describe("Support shared drives (set true for shared drive files)"),
         exportMimeType: z.string().optional().describe("For Google-native files (Docs/Sheets/Slides): export format. Defaults to text/plain for Docs, text/csv for Sheets. Examples: text/plain, text/csv, application/pdf"),
+        savePath: z.string().optional().describe("For binary files (images, PDFs): save to this local path instead of returning content inline. The file path is returned in the response."),
       },
       async (args) => {
         const tmpFile = join(tmpdir(), `gws-dl-${randomBytes(8).toString("hex")}`);
+        let keepTmpFile = false;
 
         try {
           // First, get metadata to determine file type
           const metaParams: Record<string, unknown> = {
             fileId: args.fileId,
             fields: "mimeType,name,size",
+            supportsAllDrives: true,
           };
-          if (args.supportsAllDrives) metaParams.supportsAllDrives = true;
 
           const metaParamsJson = JSON.stringify(metaParams);
           const metaEscaped = process.platform === "win32"
@@ -245,8 +246,8 @@ async function main() {
             const dlParams: Record<string, unknown> = {
               fileId: args.fileId,
               alt: "media",
+              supportsAllDrives: true,
             };
-            if (args.supportsAllDrives) dlParams.supportsAllDrives = true;
 
             const paramsJson = JSON.stringify(dlParams);
             const escaped = process.platform === "win32"
@@ -257,7 +258,7 @@ async function main() {
           }
 
           console.error(`[gws-mcp] Downloading ${fileName} (${fileMimeType}) to ${tmpFile}`);
-          await spawnGwsRaw(gwsBinary, cliArgs);
+          await spawnGwsRaw(gwsBinary, cliArgs, 120_000); // 2 min timeout for downloads
 
           if (!existsSync(tmpFile)) {
             return {
@@ -281,9 +282,17 @@ async function main() {
             if (content.length > 100_000) {
               content = content.slice(0, 100_000) + "\n\n[Content truncated at 100,000 characters]";
             }
+          } else if (args.savePath) {
+            // Save binary file to requested path
+            const saveTo = String(args.savePath);
+            copyFileSync(tmpFile, saveTo);
+            const stat = readFileSync(saveTo);
+            content = `[Binary file saved: ${saveTo}]\nName: ${fileName}\nType: ${fileMimeType}\nSize: ${stat.length} bytes`;
           } else {
+            // Binary file without savePath — keep temp file so caller can access it
+            keepTmpFile = true;
             const buf = readFileSync(tmpFile);
-            content = `[Binary file: ${fileName} (${fileMimeType}, ${buf.length} bytes)]\n\nBase64 content (first 50KB):\n${buf.toString("base64").slice(0, 50_000)}`;
+            content = `[Binary file: ${fileName} (${fileMimeType}, ${buf.length} bytes)]\nSaved to: ${tmpFile}\n\nTo save to a specific path, call again with the savePath parameter.`;
           }
 
           return {
@@ -296,8 +305,10 @@ async function main() {
             isError: true,
           };
         } finally {
-          // Clean up temp file
-          try { if (existsSync(tmpFile)) unlinkSync(tmpFile); } catch { /* ignore */ }
+          // Clean up temp file (unless it's a binary file the caller needs)
+          if (!keepTmpFile) {
+            try { if (existsSync(tmpFile)) unlinkSync(tmpFile); } catch { /* ignore */ }
+          }
         }
       },
     );

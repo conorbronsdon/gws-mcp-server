@@ -80,7 +80,8 @@ function buildArgs(
   const cliArgs = [...tool.command];
 
   // Collect --params (query/path parameters)
-  const params: Record<string, unknown> = {};
+  // Start with defaults (e.g. supportsAllDrives), then overlay caller values
+  const params: Record<string, unknown> = { ...(tool.defaultParams || {}) };
   for (const p of tool.params) {
     if (args[p.name] !== undefined) {
       params[p.name] = args[p.name];
@@ -134,12 +135,13 @@ function buildArgs(
 export function spawnGwsRaw(
   gwsBinary: string,
   args: string[],
+  timeoutMs: number = 30_000,
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const proc = spawn(gwsBinary, args, {
       stdio: ["ignore", "pipe", "pipe"],
       shell: process.platform === "win32",
-      timeout: 30_000,
+      timeout: timeoutMs,
     });
 
     let stdout = "";
@@ -195,7 +197,13 @@ export async function executeGws(
     return { success: true, output: stdout || "(empty response)" };
   } catch (err: unknown) {
     const error = err as { message?: string };
-    const message = error.message || "Unknown error";
+    let message = error.message || "Unknown error";
+
+    // Enhance Drive 404 errors with actionable hints
+    if (message.includes("404") && message.includes("not found") && tool.command[0] === "drive") {
+      message += "\n\nHint: If this file is in a shared drive, ensure supportsAllDrives is set (this should be automatic). Check that the file ID is correct and the authenticated account has access.";
+    }
+
     console.error(`[gws-mcp] Error: ${message}`);
     return { success: false, output: "", error: message };
   }

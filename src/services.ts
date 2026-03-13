@@ -20,6 +20,8 @@ export interface ToolDef {
   bodyParams?: ParamDef[];
   /** Whether this tool accepts a file upload via --upload */
   supportsUpload?: boolean;
+  /** Default params injected into every call (can be overridden by caller) */
+  defaultParams?: Record<string, unknown>;
 }
 
 export interface ParamDef {
@@ -31,29 +33,32 @@ export interface ParamDef {
 
 // ── Drive ──────────────────────────────────────────────────────────────
 
+// Shared drive defaults — injected automatically so callers never forget
+const DRIVE_SHARED_DEFAULTS = { supportsAllDrives: true, includeItemsFromAllDrives: true };
+const DRIVE_SHARED_DEFAULTS_NO_INCLUDE = { supportsAllDrives: true };
+
 const driveTools: ToolDef[] = [
   {
     name: "drive_files_list",
-    description: "List files in Google Drive. Supports search queries via the 'q' parameter.",
+    description: "List files in Google Drive. Supports search queries via the 'q' parameter. Shared drive files are included automatically.",
     command: ["drive", "files", "list"],
     params: [
       { name: "q", description: "Search query (e.g. \"name contains 'report'\" or \"mimeType='application/vnd.google-apps.folder'\")", type: "string", required: false },
       { name: "pageSize", description: "Max results per page (1-1000, default 100)", type: "number", required: false },
       { name: "fields", description: "Fields to include (e.g. \"files(id,name,mimeType)\")", type: "string", required: false },
       { name: "orderBy", description: "Sort order (e.g. \"modifiedTime desc\")", type: "string", required: false },
-      { name: "supportsAllDrives", description: "Include shared drive items", type: "boolean", required: false },
-      { name: "includeItemsFromAllDrives", description: "Include items from all drives", type: "boolean", required: false },
     ],
+    defaultParams: DRIVE_SHARED_DEFAULTS,
   },
   {
     name: "drive_files_get",
-    description: "Get a file's metadata by ID.",
+    description: "Get a file's metadata by ID. Shared drive files are supported automatically.",
     command: ["drive", "files", "get"],
     params: [
       { name: "fileId", description: "The file ID", type: "string", required: true },
       { name: "fields", description: "Fields to include", type: "string", required: false },
-      { name: "supportsAllDrives", description: "Support shared drives", type: "boolean", required: false },
     ],
+    defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
   },
   {
     name: "drive_files_create",
@@ -61,7 +66,6 @@ const driveTools: ToolDef[] = [
     command: ["drive", "files", "create"],
     params: [
       { name: "fields", description: "Fields to return (e.g. \"id,webViewLink\")", type: "string", required: false },
-      { name: "supportsAllDrives", description: "Support shared drives", type: "boolean", required: false },
     ],
     bodyParams: [
       { name: "name", description: "File name", type: "string", required: true },
@@ -69,6 +73,7 @@ const driveTools: ToolDef[] = [
       { name: "parents", description: "Parent folder IDs (JSON array as string, e.g. '[\"folderId\"]')", type: "string", required: false },
     ],
     supportsUpload: true,
+    defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
   },
   {
     name: "drive_files_copy",
@@ -77,13 +82,13 @@ const driveTools: ToolDef[] = [
     params: [
       { name: "fileId", description: "Source file ID to copy", type: "string", required: true },
       { name: "fields", description: "Fields to return", type: "string", required: false },
-      { name: "supportsAllDrives", description: "Support shared drives", type: "boolean", required: false },
     ],
     bodyParams: [
       { name: "name", description: "Name for the copy", type: "string", required: true },
       { name: "mimeType", description: "Target MIME type for conversion", type: "string", required: false },
       { name: "parents", description: "Parent folder IDs (JSON array as string)", type: "string", required: false },
     ],
+    defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
   },
   {
     name: "drive_files_update",
@@ -92,13 +97,13 @@ const driveTools: ToolDef[] = [
     params: [
       { name: "fileId", description: "The file ID to update", type: "string", required: true },
       { name: "fields", description: "Fields to return", type: "string", required: false },
-      { name: "supportsAllDrives", description: "Support shared drives", type: "boolean", required: false },
     ],
     bodyParams: [
       { name: "name", description: "New file name", type: "string", required: false },
       { name: "mimeType", description: "New MIME type", type: "string", required: false },
     ],
     supportsUpload: true,
+    defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
   },
   {
     name: "drive_files_delete",
@@ -106,7 +111,16 @@ const driveTools: ToolDef[] = [
     command: ["drive", "files", "delete"],
     params: [
       { name: "fileId", description: "The file ID to delete", type: "string", required: true },
-      { name: "supportsAllDrives", description: "Support shared drives", type: "boolean", required: false },
+    ],
+    defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
+  },
+  {
+    name: "drive_files_export",
+    description: "Export a Google Workspace file (Doc, Sheet, Slide) to a specific format. Returns JSON with export metadata. Use drive_files_download for automatic export with content returned inline.",
+    command: ["drive", "files", "export"],
+    params: [
+      { name: "fileId", description: "The Google Workspace file ID to export", type: "string", required: true },
+      { name: "mimeType", description: "Export format: text/plain, text/csv, application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document (docx), application/vnd.openxmlformats-officedocument.spreadsheetml.sheet (xlsx)", type: "string", required: true },
     ],
   },
   {
@@ -115,7 +129,6 @@ const driveTools: ToolDef[] = [
     command: ["drive", "permissions", "create"],
     params: [
       { name: "fileId", description: "The file ID to share", type: "string", required: true },
-      { name: "supportsAllDrives", description: "Support shared drives", type: "boolean", required: false },
     ],
     bodyParams: [
       { name: "role", description: "Permission role: owner, organizer, fileOrganizer, writer, commenter, reader", type: "string", required: true },
