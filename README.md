@@ -73,13 +73,14 @@ npm install && npm run build
 
 ## Available services & tools
 
-### `drive` (7 tools)
+### `drive` (8 tools)
 - `drive_files_list` — Search and list files
 - `drive_files_get` — Get file metadata
 - `drive_files_create` — Create files (with optional upload)
 - `drive_files_copy` — Copy files (useful for format conversion)
 - `drive_files_update` — Update file metadata/content
 - `drive_files_delete` — Delete files
+- `drive_files_export` — Export Google Workspace files (Doc, Sheet, Slide) to other formats
 - `drive_permissions_create` — Share files
 
 ### `sheets` (4 tools)
@@ -106,7 +107,7 @@ npm install && npm run build
 - `gmail_threads_list` — Search threads
 - `gmail_threads_get` — Read a full thread
 
-**Total: 23 tools** (vs 200-400 in the old implementation)
+**Total: 24 tools** (vs 200-400 in the old implementation)
 
 ## Adding new tools
 
