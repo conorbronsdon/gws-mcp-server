@@ -97,7 +97,7 @@ function validateGwsBinary(gwsBinary: string): boolean {
 
 // ── Zod schema generation ──────────────────────────────────────────────
 
-function buildZodSchema(tool: ToolDef): Record<string, z.ZodTypeAny> {
+export function buildZodSchema(tool: ToolDef): Record<string, z.ZodTypeAny> {
   const shape: Record<string, z.ZodTypeAny> = {};
 
   const allParams = [...tool.params, ...(tool.bodyParams || [])];

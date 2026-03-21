@@ -42,7 +42,7 @@ export function escapeJsonArg(json: string): string {
  * Validate and sanitize a file upload path.
  * Rejects paths containing shell metacharacters or path traversal sequences.
  */
-function sanitizeUploadPath(rawPath: string): string {
+export function sanitizeUploadPath(rawPath: string): string {
   // Reject shell metacharacters
   if (CMD_METACHAR_RE.test(rawPath) || /[;`$]/.test(rawPath)) {
     throw new Error(`Upload path contains disallowed characters: ${rawPath}`);
@@ -73,7 +73,7 @@ export interface ExecResult {
 /**
  * Build gws CLI arguments from a tool definition and the provided arguments.
  */
-function buildArgs(
+export function buildArgs(
   tool: ToolDef,
   args: Record<string, unknown>,
 ): string[] {
