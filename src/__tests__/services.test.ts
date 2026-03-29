@@ -61,11 +61,11 @@ describe("tool definitions integrity", () => {
     expect(SERVICE_TOOLS["sheets"].length).toBe(4);
     expect(SERVICE_TOOLS["calendar"].length).toBe(5);
     expect(SERVICE_TOOLS["docs"].length).toBe(3);
-    expect(SERVICE_TOOLS["gmail"].length).toBe(4);
+    expect(SERVICE_TOOLS["gmail"].length).toBe(5);
   });
 
-  it("total tool count is 24", () => {
-    expect(allTools.length).toBe(24);
+  it("total tool count is 25", () => {
+    expect(allTools.length).toBe(25);
   });
 
   it("all params have required fields", () => {

@@ -333,6 +333,20 @@ const gmailTools: ToolDef[] = [
       { name: "format", description: "Response format: full, metadata, minimal", type: "string", required: false },
     ],
   },
+  {
+    name: "gmail_threads_modify",
+    description:
+      "Modify a Gmail thread: add/remove labels. To archive, remove INBOX. To mark read, remove UNREAD. To star, add STARRED.",
+    command: ["gmail", "users", "threads", "modify"],
+    params: [
+      { name: "userId", description: "User ID (use 'me')", type: "string", required: true },
+      { name: "id", description: "Thread ID", type: "string", required: true },
+    ],
+    bodyParams: [
+      { name: "addLabelIds", description: "JSON array of label IDs to add, e.g. [\"STARRED\"]", type: "string", required: false },
+      { name: "removeLabelIds", description: "JSON array of label IDs to remove, e.g. [\"INBOX\",\"UNREAD\"]", type: "string", required: false },
+    ],
+  },
 ];
 
 // ── Service registry ───────────────────────────────────────────────────
