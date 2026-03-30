@@ -30,6 +30,10 @@ cd gws-mcp-server
 npm install && npm run build
 ```
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/conorbronsdon-gws-mcp-server).
+
 ## Configuration
 
 ### Claude Code (`.mcp.json`)
