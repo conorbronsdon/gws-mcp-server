@@ -10,11 +10,19 @@ describe("base64url", () => {
   });
 
   it("replaces + and / with - and _", () => {
-    // Bytes that produce '+' and '/' in standard base64:
-    // 0xfb, 0xff, 0xbf → +/+/ in standard base64 → -_-_ in base64url
-    const input = Buffer.from([0xfb, 0xff, 0xbf]).toString("utf-8");
-    const out = base64url(input);
-    expect(out).not.toMatch(/[+/=]/);
+    // "ûÿ¿" in UTF-8 is bytes C3 BB C3 BF C2 BF, whose standard base64
+    // encoding is "w7vDv8K/" (contains '/'). base64url should swap '/' → '_'.
+    const input = "ûÿ¿";
+    expect(base64url(input)).toBe("w7vDv8K_");
+  });
+
+  it("never emits +, /, or = anywhere in the output", () => {
+    // Cover both substitution paths (+ and /) plus padding stripping with
+    // an input long enough to hit the padding edges.
+    const inputs = ["", "f", "fo", "foo", "foob", "ûÿ¿", "subjects: hello\nworld"];
+    for (const input of inputs) {
+      expect(base64url(input)).not.toMatch(/[+/=]/);
+    }
   });
 
   it("strips padding", () => {
@@ -97,6 +105,46 @@ describe("buildRfc2822", () => {
   it("rejects CR or LF in 'subject'", () => {
     expect(() => buildRfc2822({ to: "a@x.com", subject: "ping\r\nX: y", body: "hi" }))
       .toThrow(/'subject' must not contain CR or LF/);
+  });
+
+  // ── boundary validation ───────────────────────────────────────────────
+  // boundary is exported through MimeOptions for test determinism, so a
+  // caller could otherwise smuggle CR/LF or quote characters into the
+  // Content-Type header.
+
+  it("rejects CR or LF in 'boundary'", () => {
+    expect(() => buildRfc2822({
+      to: "a@x.com", body: "hi", htmlBody: "<p>hi</p>",
+      boundary: "X\r\nBcc: attacker@x.com",
+    })).toThrow(/'boundary' must contain only RFC 2046 token characters/);
+  });
+
+  it("rejects quotes and other unsafe characters in 'boundary'", () => {
+    expect(() => buildRfc2822({
+      to: "a@x.com", body: "hi", htmlBody: "<p>hi</p>",
+      boundary: 'X"; evil="y',
+    })).toThrow(/RFC 2046 token characters/);
+    expect(() => buildRfc2822({
+      to: "a@x.com", body: "hi", htmlBody: "<p>hi</p>",
+      boundary: "with space",
+    })).toThrow(/RFC 2046 token characters/);
+  });
+
+  it("rejects empty or oversized 'boundary'", () => {
+    expect(() => buildRfc2822({
+      to: "a@x.com", body: "hi", htmlBody: "<p>hi</p>", boundary: "",
+    })).toThrow(/'boundary' must be 1-70 characters/);
+    expect(() => buildRfc2822({
+      to: "a@x.com", body: "hi", htmlBody: "<p>hi</p>", boundary: "a".repeat(71),
+    })).toThrow(/'boundary' must be 1-70 characters/);
+  });
+
+  it("accepts RFC 2046 token characters in 'boundary'", () => {
+    const msg = buildRfc2822({
+      to: "a@x.com", body: "hi", htmlBody: "<p>hi</p>",
+      boundary: "==BOUNDARY_test-123==",
+    });
+    expect(msg).toContain('boundary="==BOUNDARY_test-123=="');
   });
 
   it("allows CR/LF in body and htmlBody (those are payload, not headers)", () => {

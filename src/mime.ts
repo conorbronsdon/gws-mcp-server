@@ -43,6 +43,25 @@ function assertNoCrlf(name: string, value: string): void {
   }
 }
 
+/**
+ * Validate a multipart boundary against the RFC 2046 token charset.
+ * `boundary` is exported through MimeOptions for deterministic test output,
+ * which means a malicious caller could otherwise smuggle CR/LF or quote
+ * characters into the Content-Type header. RFC 2046 defines bcharsnospace
+ * as: DIGIT / ALPHA / "'" / "(" / ")" / "+" / "_" / "," / "-" / "." / "/"
+ *     / ":" / "=" / "?"
+ * (space is also allowed mid-string but disallowed as the trailing char;
+ * we forbid it entirely for simplicity). Length is capped at 70 per spec.
+ */
+function assertSafeBoundary(value: string): void {
+  if (value.length === 0 || value.length > 70) {
+    throw new Error("buildRfc2822: 'boundary' must be 1-70 characters");
+  }
+  if (!/^[A-Za-z0-9'()+,./:=?_-]+$/.test(value)) {
+    throw new Error("buildRfc2822: 'boundary' must contain only RFC 2046 token characters");
+  }
+}
+
 /** Encode a UTF-8 string to base64url (RFC 4648 §5). */
 export function base64url(input: string): string {
   return Buffer.from(input, "utf-8")
@@ -76,6 +95,10 @@ export function buildRfc2822(opts: MimeOptions): string {
   // makes injection impossible but silently mangles the subject. Better to
   // surface the error.
   if (opts.subject !== undefined) assertNoCrlf("subject", opts.subject);
+  // Boundary lands in the Content-Type header, so it needs the same protection
+  // as a header value — plus structural validation so it can't break out of
+  // the quoted parameter syntax.
+  if (opts.boundary !== undefined) assertSafeBoundary(opts.boundary);
 
   const headers: string[] = [];
   if (opts.from) headers.push(`From: ${opts.from}`);
