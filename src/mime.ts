@@ -29,6 +29,20 @@ export interface MimeOptions {
   boundary?: string;
 }
 
+/**
+ * Reject CR or LF in a header value to prevent header injection.
+ * Email header injection lets an attacker inject extra headers (Bcc, etc.)
+ * or even body content by smuggling \r\n into a value that's concatenated
+ * directly into the header section. Subject is protected indirectly via
+ * encodeHeader (which base64-encodes anything outside printable ASCII), but
+ * address fields and Message-ID headers go in raw, so they need this guard.
+ */
+function assertNoCrlf(name: string, value: string): void {
+  if (/[\r\n]/.test(value)) {
+    throw new Error(`buildRfc2822: '${name}' must not contain CR or LF characters`);
+  }
+}
+
 /** Encode a UTF-8 string to base64url (RFC 4648 §5). */
 export function base64url(input: string): string {
   return Buffer.from(input, "utf-8")
@@ -50,6 +64,18 @@ export function encodeHeader(value: string): string {
 /** Build an RFC 2822 message string. */
 export function buildRfc2822(opts: MimeOptions): string {
   if (!opts.to) throw new Error("buildRfc2822: 'to' is required");
+
+  // Guard every value that lands in a header against CRLF injection.
+  assertNoCrlf("to", opts.to);
+  if (opts.cc) assertNoCrlf("cc", opts.cc);
+  if (opts.bcc) assertNoCrlf("bcc", opts.bcc);
+  if (opts.from) assertNoCrlf("from", opts.from);
+  if (opts.inReplyTo) assertNoCrlf("inReplyTo", opts.inReplyTo);
+  if (opts.references) assertNoCrlf("references", opts.references);
+  // Subject is also guarded — encodeHeader would base64-encode CRLF, which
+  // makes injection impossible but silently mangles the subject. Better to
+  // surface the error.
+  if (opts.subject !== undefined) assertNoCrlf("subject", opts.subject);
 
   const headers: string[] = [];
   if (opts.from) headers.push(`From: ${opts.from}`);

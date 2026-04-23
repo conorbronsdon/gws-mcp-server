@@ -66,6 +66,48 @@ describe("buildRfc2822", () => {
     expect(() => buildRfc2822({ to: "" })).toThrow("'to' is required");
   });
 
+  // ── CRLF header injection guard ───────────────────────────────────────
+  // An attacker controlling a header value could otherwise inject extra
+  // headers (e.g. Bcc) or smuggle in body content. Every header-bound input
+  // must reject CR and LF.
+
+  it("rejects CR or LF in 'to'", () => {
+    expect(() => buildRfc2822({ to: "amy@x.com\r\nBcc: attacker@evil.com", body: "hi" }))
+      .toThrow(/'to' must not contain CR or LF/);
+    expect(() => buildRfc2822({ to: "amy@x.com\nBcc: attacker@evil.com", body: "hi" }))
+      .toThrow(/'to' must not contain CR or LF/);
+  });
+
+  it("rejects CR or LF in 'cc' and 'bcc'", () => {
+    expect(() => buildRfc2822({ to: "a@x.com", cc: "b@x.com\r\nX: y", body: "hi" }))
+      .toThrow(/'cc' must not contain CR or LF/);
+    expect(() => buildRfc2822({ to: "a@x.com", bcc: "b@x.com\nX: y", body: "hi" }))
+      .toThrow(/'bcc' must not contain CR or LF/);
+  });
+
+  it("rejects CR or LF in 'from', 'inReplyTo', 'references'", () => {
+    expect(() => buildRfc2822({ to: "a@x.com", from: "me@x.com\r\nX: y", body: "hi" }))
+      .toThrow(/'from' must not contain CR or LF/);
+    expect(() => buildRfc2822({ to: "a@x.com", inReplyTo: "<x>\r\nX: y", body: "hi" }))
+      .toThrow(/'inReplyTo' must not contain CR or LF/);
+    expect(() => buildRfc2822({ to: "a@x.com", references: "<x>\r\nX: y", body: "hi" }))
+      .toThrow(/'references' must not contain CR or LF/);
+  });
+
+  it("rejects CR or LF in 'subject'", () => {
+    expect(() => buildRfc2822({ to: "a@x.com", subject: "ping\r\nX: y", body: "hi" }))
+      .toThrow(/'subject' must not contain CR or LF/);
+  });
+
+  it("allows CR/LF in body and htmlBody (those are payload, not headers)", () => {
+    const msg = buildRfc2822({
+      to: "a@x.com",
+      subject: "ok",
+      body: "Line one.\r\nLine two.\r\nLine three.",
+    });
+    expect(msg.endsWith("Line one.\r\nLine two.\r\nLine three.")).toBe(true);
+  });
+
   it("uses CRLF line separators and a blank line before the body", () => {
     const msg = buildRfc2822({
       to: "amy@example.com",
