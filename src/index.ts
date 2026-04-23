@@ -29,7 +29,8 @@ import { tmpdir } from "node:os";
 import { readFileSync, unlinkSync, existsSync, copyFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { getToolsForServices, ALL_SERVICES, type ToolDef } from "./services.js";
-import { executeGws, spawnGwsRaw } from "./executor.js";
+import { executeGws, spawnGwsRaw, escapeJsonArg } from "./executor.js";
+import { buildRfc2822, base64url } from "./mime.js";
 
 // ── CLI argument parsing ───────────────────────────────────────────────
 
@@ -316,6 +317,64 @@ async function main() {
     );
 
     console.error("[gws-mcp] Registered custom tool: drive_files_download");
+  }
+
+  // ── Custom tool: gmail_drafts_create ──────────────────────────────────
+  // Creates a Gmail draft. The standard ToolDef pattern can't express the
+  // Draft body (a base64url-encoded RFC 2822 message wrapped in
+  // {message: {raw, threadId}}), so this is registered separately.
+  if (services.includes("gmail")) {
+    server.tool(
+      "gmail_drafts_create",
+      "Create a Gmail draft. Pass threadId to attach the draft to an existing conversation (it will appear as a reply within that thread). The draft is NOT sent — open Gmail to review and send.",
+      {
+        to: z.string().describe("Recipient(s). Comma-separated for multiple, e.g. \"a@x.com, b@y.com\""),
+        cc: z.string().optional().describe("CC recipient(s), comma-separated"),
+        bcc: z.string().optional().describe("BCC recipient(s), comma-separated"),
+        subject: z.string().optional().describe("Subject line. When attaching to a thread via threadId, Gmail expects the subject to match the thread (typically \"Re: <original>\")."),
+        body: z.string().optional().describe("Plain-text body"),
+        htmlBody: z.string().optional().describe("HTML body. If both body and htmlBody are provided, the draft is multipart/alternative."),
+        threadId: z.string().optional().describe("Thread ID to attach this draft to. Get it from gmail_threads_list / gmail_messages_get."),
+        inReplyTo: z.string().optional().describe("Message-ID header value of the message being replied to. Improves threading robustness alongside threadId."),
+        references: z.string().optional().describe("References header value (space-separated Message-IDs of ancestor messages)."),
+      },
+      async (args) => {
+        try {
+          const raw = base64url(buildRfc2822({
+            to: args.to,
+            cc: args.cc,
+            bcc: args.bcc,
+            subject: args.subject,
+            body: args.body,
+            htmlBody: args.htmlBody,
+            inReplyTo: args.inReplyTo,
+            references: args.references,
+          }));
+
+          const message: { raw: string; threadId?: string } = { raw };
+          if (args.threadId) message.threadId = args.threadId;
+
+          const params = escapeJsonArg(JSON.stringify({ userId: "me" }));
+          const json = escapeJsonArg(JSON.stringify({ message }));
+
+          const { stdout } = await spawnGwsRaw(gwsBinary, [
+            "gmail", "users", "drafts", "create",
+            "--params", params,
+            "--json", json,
+          ], 30_000);
+
+          return { content: [{ type: "text" as const, text: stdout || "(empty response)" }] };
+        } catch (err: unknown) {
+          const error = err as { message?: string };
+          return {
+            content: [{ type: "text" as const, text: `Error creating draft: ${error.message || "Unknown error"}` }],
+            isError: true,
+          };
+        }
+      },
+    );
+
+    console.error("[gws-mcp] Registered custom tool: gmail_drafts_create");
   }
 
   // Connect via stdio
