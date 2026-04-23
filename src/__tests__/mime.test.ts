@@ -1,0 +1,295 @@
+import { describe, it, expect } from "vitest";
+import { base64url, encodeHeader, buildRfc2822 } from "../mime.js";
+
+// ── base64url ───────────────────────────────────────────────────────────
+
+describe("base64url", () => {
+  it("encodes plain ASCII", () => {
+    // "Hello" → SGVsbG8 (no padding)
+    expect(base64url("Hello")).toBe("SGVsbG8");
+  });
+
+  it("replaces + and / with - and _", () => {
+    // "ûÿ¿" in UTF-8 is bytes C3 BB C3 BF C2 BF, whose standard base64
+    // encoding is "w7vDv8K/" (contains '/'). base64url should swap '/' → '_'.
+    const input = "ûÿ¿";
+    expect(base64url(input)).toBe("w7vDv8K_");
+  });
+
+  it("never emits +, /, or = anywhere in the output", () => {
+    // Cover both substitution paths (+ and /) plus padding stripping with
+    // an input long enough to hit the padding edges.
+    const inputs = ["", "f", "fo", "foo", "foob", "ûÿ¿", "subjects: hello\nworld"];
+    for (const input of inputs) {
+      expect(base64url(input)).not.toMatch(/[+/=]/);
+    }
+  });
+
+  it("strips padding", () => {
+    // "f" base64 → "Zg==" → "Zg" in base64url
+    expect(base64url("f")).toBe("Zg");
+    expect(base64url("fo")).toBe("Zm8");
+  });
+
+  it("round-trips through base64url decode", () => {
+    const original = "Hi Amy,\r\nThanks for the pitch.";
+    const encoded = base64url(original);
+    // Reverse the URL-safe substitutions and re-pad before decoding
+    const standard = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = standard + "=".repeat((4 - standard.length % 4) % 4);
+    expect(Buffer.from(padded, "base64").toString("utf-8")).toBe(original);
+  });
+});
+
+// ── encodeHeader ────────────────────────────────────────────────────────
+
+describe("encodeHeader", () => {
+  it("returns ASCII unchanged", () => {
+    expect(encodeHeader("Re: Podcast Guest")).toBe("Re: Podcast Guest");
+  });
+
+  it("RFC 2047 B-encodes non-ASCII", () => {
+    const out = encodeHeader("Café meeting");
+    expect(out.startsWith("=?UTF-8?B?")).toBe(true);
+    expect(out.endsWith("?=")).toBe(true);
+    // Decode the inner base64 and verify
+    const inner = out.slice("=?UTF-8?B?".length, -2);
+    expect(Buffer.from(inner, "base64").toString("utf-8")).toBe("Café meeting");
+  });
+
+  it("treats em-dash as non-ASCII (encodes it)", () => {
+    const out = encodeHeader("Validation — not generation");
+    expect(out.startsWith("=?UTF-8?B?")).toBe(true);
+  });
+
+  it("handles empty string", () => {
+    expect(encodeHeader("")).toBe("");
+  });
+});
+
+// ── buildRfc2822 ────────────────────────────────────────────────────────
+
+describe("buildRfc2822", () => {
+  it("requires 'to'", () => {
+    expect(() => buildRfc2822({ to: "" })).toThrow("'to' is required");
+  });
+
+  // ── CRLF header injection guard ───────────────────────────────────────
+  // An attacker controlling a header value could otherwise inject extra
+  // headers (e.g. Bcc) or smuggle in body content. Every header-bound input
+  // must reject CR and LF.
+
+  it("rejects CR or LF in 'to'", () => {
+    expect(() => buildRfc2822({ to: "amy@x.com\r\nBcc: attacker@evil.com", body: "hi" }))
+      .toThrow(/'to' must not contain CR or LF/);
+    expect(() => buildRfc2822({ to: "amy@x.com\nBcc: attacker@evil.com", body: "hi" }))
+      .toThrow(/'to' must not contain CR or LF/);
+  });
+
+  it("rejects CR or LF in 'cc' and 'bcc'", () => {
+    expect(() => buildRfc2822({ to: "a@x.com", cc: "b@x.com\r\nX: y", body: "hi" }))
+      .toThrow(/'cc' must not contain CR or LF/);
+    expect(() => buildRfc2822({ to: "a@x.com", bcc: "b@x.com\nX: y", body: "hi" }))
+      .toThrow(/'bcc' must not contain CR or LF/);
+  });
+
+  it("rejects CR or LF in 'from', 'inReplyTo', 'references'", () => {
+    expect(() => buildRfc2822({ to: "a@x.com", from: "me@x.com\r\nX: y", body: "hi" }))
+      .toThrow(/'from' must not contain CR or LF/);
+    expect(() => buildRfc2822({ to: "a@x.com", inReplyTo: "<x>\r\nX: y", body: "hi" }))
+      .toThrow(/'inReplyTo' must not contain CR or LF/);
+    expect(() => buildRfc2822({ to: "a@x.com", references: "<x>\r\nX: y", body: "hi" }))
+      .toThrow(/'references' must not contain CR or LF/);
+  });
+
+  it("rejects CR or LF in 'subject'", () => {
+    expect(() => buildRfc2822({ to: "a@x.com", subject: "ping\r\nX: y", body: "hi" }))
+      .toThrow(/'subject' must not contain CR or LF/);
+  });
+
+  // ── boundary validation ───────────────────────────────────────────────
+  // boundary is exported through MimeOptions for test determinism, so a
+  // caller could otherwise smuggle CR/LF or quote characters into the
+  // Content-Type header.
+
+  it("rejects CR or LF in 'boundary'", () => {
+    expect(() => buildRfc2822({
+      to: "a@x.com", body: "hi", htmlBody: "<p>hi</p>",
+      boundary: "X\r\nBcc: attacker@x.com",
+    })).toThrow(/'boundary' must contain only RFC 2046 token characters/);
+  });
+
+  it("rejects quotes and other unsafe characters in 'boundary'", () => {
+    expect(() => buildRfc2822({
+      to: "a@x.com", body: "hi", htmlBody: "<p>hi</p>",
+      boundary: 'X"; evil="y',
+    })).toThrow(/RFC 2046 token characters/);
+    expect(() => buildRfc2822({
+      to: "a@x.com", body: "hi", htmlBody: "<p>hi</p>",
+      boundary: "with space",
+    })).toThrow(/RFC 2046 token characters/);
+  });
+
+  it("rejects empty or oversized 'boundary'", () => {
+    expect(() => buildRfc2822({
+      to: "a@x.com", body: "hi", htmlBody: "<p>hi</p>", boundary: "",
+    })).toThrow(/'boundary' must be 1-70 characters/);
+    expect(() => buildRfc2822({
+      to: "a@x.com", body: "hi", htmlBody: "<p>hi</p>", boundary: "a".repeat(71),
+    })).toThrow(/'boundary' must be 1-70 characters/);
+  });
+
+  it("accepts RFC 2046 token characters in 'boundary'", () => {
+    const msg = buildRfc2822({
+      to: "a@x.com", body: "hi", htmlBody: "<p>hi</p>",
+      boundary: "==BOUNDARY_test-123==",
+    });
+    expect(msg).toContain('boundary="==BOUNDARY_test-123=="');
+  });
+
+  it("allows CR/LF in body and htmlBody (those are payload, not headers)", () => {
+    const msg = buildRfc2822({
+      to: "a@x.com",
+      subject: "ok",
+      body: "Line one.\r\nLine two.\r\nLine three.",
+    });
+    expect(msg.endsWith("Line one.\r\nLine two.\r\nLine three.")).toBe(true);
+  });
+
+  it("uses CRLF line separators and a blank line before the body", () => {
+    const msg = buildRfc2822({
+      to: "amy@example.com",
+      subject: "Hi",
+      body: "Hello.",
+    });
+    // Headers are CRLF-separated and end with a blank CRLF before the body
+    expect(msg).toMatch(/\r\n\r\nHello\.$/);
+    // No bare LFs outside of the body
+    const headerSection = msg.split("\r\n\r\n")[0];
+    expect(headerSection.includes("\n")).toBe(true); // contains \n as part of \r\n
+    // No \n that isn't preceded by \r
+    expect(/[^\r]\n/.test(headerSection)).toBe(false);
+  });
+
+  it("emits To, Subject, MIME-Version, Content-Type for plain text", () => {
+    const msg = buildRfc2822({
+      to: "amy@example.com",
+      subject: "Re: Podcast Guest",
+      body: "Hi Amy,",
+    });
+    expect(msg).toContain("To: amy@example.com");
+    expect(msg).toContain("Subject: Re: Podcast Guest");
+    expect(msg).toContain("MIME-Version: 1.0");
+    expect(msg).toContain('Content-Type: text/plain; charset="UTF-8"');
+    expect(msg).toContain("Content-Transfer-Encoding: 8bit");
+  });
+
+  it("includes Cc and Bcc when provided", () => {
+    const msg = buildRfc2822({
+      to: "a@x.com",
+      cc: "b@x.com",
+      bcc: "c@x.com",
+      body: "hi",
+    });
+    expect(msg).toContain("Cc: b@x.com");
+    expect(msg).toContain("Bcc: c@x.com");
+  });
+
+  it("omits Cc/Bcc when not provided", () => {
+    const msg = buildRfc2822({ to: "a@x.com", body: "hi" });
+    expect(msg).not.toContain("Cc:");
+    expect(msg).not.toContain("Bcc:");
+  });
+
+  it("includes In-Reply-To and References for threading", () => {
+    const msg = buildRfc2822({
+      to: "amy@example.com",
+      subject: "Re: x",
+      body: "hi",
+      inReplyTo: "<abc@mail.gmail.com>",
+      references: "<abc@mail.gmail.com> <def@mail.gmail.com>",
+    });
+    expect(msg).toContain("In-Reply-To: <abc@mail.gmail.com>");
+    expect(msg).toContain("References: <abc@mail.gmail.com> <def@mail.gmail.com>");
+  });
+
+  it("emits text/html when only htmlBody is provided", () => {
+    const msg = buildRfc2822({
+      to: "a@x.com",
+      htmlBody: "<p>Hi</p>",
+    });
+    expect(msg).toContain('Content-Type: text/html; charset="UTF-8"');
+    expect(msg).not.toContain("multipart/alternative");
+    expect(msg.endsWith("<p>Hi</p>")).toBe(true);
+  });
+
+  it("emits multipart/alternative when both body and htmlBody are provided", () => {
+    const msg = buildRfc2822({
+      to: "a@x.com",
+      subject: "s",
+      body: "Hello.",
+      htmlBody: "<p>Hello.</p>",
+      boundary: "BOUNDARY_TEST",
+    });
+    expect(msg).toContain('Content-Type: multipart/alternative; boundary="BOUNDARY_TEST"');
+    expect(msg).toContain("--BOUNDARY_TEST\r\n");
+    expect(msg).toContain('Content-Type: text/plain; charset="UTF-8"');
+    expect(msg).toContain('Content-Type: text/html; charset="UTF-8"');
+    expect(msg).toContain("Hello.");
+    expect(msg).toContain("<p>Hello.</p>");
+    expect(msg.trimEnd().endsWith("--BOUNDARY_TEST--")).toBe(true);
+  });
+
+  it("handles empty body (no body and no htmlBody) by producing headers + blank body", () => {
+    const msg = buildRfc2822({ to: "a@x.com", subject: "ping" });
+    expect(msg).toContain("To: a@x.com");
+    expect(msg).toContain("Subject: ping");
+    expect(msg).toContain('Content-Type: text/plain; charset="UTF-8"');
+    expect(msg.endsWith("\r\n\r\n")).toBe(true);
+  });
+
+  it("RFC 2047-encodes a Subject containing non-ASCII", () => {
+    const msg = buildRfc2822({
+      to: "a@x.com",
+      subject: "Café",
+      body: "hi",
+    });
+    expect(msg).toMatch(/Subject: =\?UTF-8\?B\?[A-Za-z0-9+/=]+\?=/);
+  });
+
+  it("includes From only when explicitly provided", () => {
+    const without = buildRfc2822({ to: "a@x.com", body: "hi" });
+    expect(without.split("\r\n\r\n")[0].includes("From:")).toBe(false);
+
+    const withFrom = buildRfc2822({ to: "a@x.com", body: "hi", from: "me@x.com" });
+    expect(withFrom).toContain("From: me@x.com");
+  });
+
+  it("preserves header ordering: From, To, Cc, Bcc, Subject, In-Reply-To, References, MIME-Version, Content-Type", () => {
+    const msg = buildRfc2822({
+      to: "a@x.com",
+      cc: "b@x.com",
+      bcc: "c@x.com",
+      subject: "s",
+      body: "hi",
+      from: "me@x.com",
+      inReplyTo: "<abc@x>",
+      references: "<abc@x>",
+    });
+    const headerSection = msg.split("\r\n\r\n")[0];
+    const lines = headerSection.split("\r\n");
+    const headerNames = lines.map((l) => l.split(":")[0]);
+    expect(headerNames).toEqual([
+      "From",
+      "To",
+      "Cc",
+      "Bcc",
+      "Subject",
+      "In-Reply-To",
+      "References",
+      "MIME-Version",
+      "Content-Type",
+      "Content-Transfer-Encoding",
+    ]);
+  });
+});
