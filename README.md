@@ -107,7 +107,23 @@ npm install && npm run build
 - `gmail_threads_list` — Search threads
 - `gmail_threads_get` — Read a full thread
 
-**Total: 24 tools** (vs 200-400 in the old implementation)
+### `tasks` (14 tools)
+- `tasks_tasklists_list` — List task lists
+- `tasks_tasklists_get` — Get a task list
+- `tasks_tasklists_insert` — Create a task list
+- `tasks_tasklists_update` — Replace a task list (full update)
+- `tasks_tasklists_patch` — Update a task list (partial)
+- `tasks_tasklists_delete` — Delete a task list
+- `tasks_tasks_list` — List tasks (filters: completed/hidden/due dates)
+- `tasks_tasks_get` — Get a task
+- `tasks_tasks_insert` — Create a task (optionally nested or positioned)
+- `tasks_tasks_update` — Replace a task (full update)
+- `tasks_tasks_patch` — Update a task (common use: mark complete)
+- `tasks_tasks_move` — Move a task within/across lists or reorder
+- `tasks_tasks_delete` — Delete a task
+- `tasks_tasks_clear` — Hide all completed tasks in a list
+
+**Total: 38 tools** (vs 200-400 in the old implementation)
 
 ## Adding new tools
 
