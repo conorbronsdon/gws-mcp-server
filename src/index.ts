@@ -7,14 +7,14 @@
  * wrapping the gws CLI (https://github.com/googleworkspace/cli).
  *
  * Usage:
- *   gws-mcp-server [--services drive,sheets,calendar,docs,gmail] [--gws-path /path/to/gws]
+ *   gws-mcp-server [--services drive,sheets,calendar,docs,gmail,tasks] [--gws-path /path/to/gws]
  *
  * In .mcp.json:
  *   {
  *     "mcpServers": {
  *       "google-workspace": {
  *         "command": "node",
- *         "args": ["path/to/gws-mcp-server/build/index.js", "--services", "drive,sheets,calendar,docs,gmail"]
+ *         "args": ["path/to/gws-mcp-server/build/index.js", "--services", "drive,sheets,calendar,docs,gmail,tasks"]
  *       }
  *     }
  *   }
@@ -24,8 +24,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { execFileSync } from "node:child_process";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { readFileSync, unlinkSync, existsSync, copyFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { getToolsForServices, ALL_SERVICES, type ToolDef } from "./services.js";
@@ -131,6 +129,21 @@ export function buildZodSchema(tool: ToolDef): Record<string, z.ZodTypeAny> {
   return shape;
 }
 
+// ── Temp file helper ───────────────────────────────────────────────────
+
+/**
+ * Generate a CWD-relative temp file name for gws CLI output.
+ *
+ * Must be relative: the gws CLI rejects --output paths that resolve outside
+ * the current working directory. On macOS, os.tmpdir() returns /var/folders/...
+ * which canonicalizes to /private/var/... (kernel symlink) and fails the
+ * CLI's validate_safe_file_path() check. A bare relative name stays in CWD
+ * on every platform. See issue #3.
+ */
+export function makeTmpFileName(prefix: string): string {
+  return `.${prefix}-${randomBytes(8).toString("hex")}`;
+}
+
 // ── Main ───────────────────────────────────────────────────────────────
 
 async function main() {
@@ -150,7 +163,7 @@ async function main() {
 
   const server = new McpServer({
     name: "gws-mcp-server",
-    version: "0.1.3",
+    version: "0.1.5",
   });
 
   // Register each tool
@@ -205,7 +218,7 @@ async function main() {
         savePath: z.string().optional().describe("For binary files (images, PDFs): save to this local path instead of returning content inline. The file path is returned in the response."),
       },
       async (args) => {
-        const tmpFile = join(tmpdir(), `gws-dl-${randomBytes(8).toString("hex")}`);
+        const tmpFile = makeTmpFileName("gws-dl");
         let keepTmpFile = false;
 
         try {

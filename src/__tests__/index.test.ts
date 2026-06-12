@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { buildZodSchema } from "../index.js";
+import { isAbsolute } from "node:path";
+import { writeFileSync, existsSync, unlinkSync } from "node:fs";
+import { buildZodSchema, makeTmpFileName } from "../index.js";
 import type { ToolDef } from "../services.js";
 
 describe("buildZodSchema", () => {
@@ -129,5 +131,39 @@ describe("buildZodSchema", () => {
     };
     const schema = buildZodSchema(tool);
     expect(schema.uploadPath).toBeUndefined();
+  });
+});
+
+describe("makeTmpFileName", () => {
+  // The gws CLI rejects --output paths that resolve outside the current
+  // working directory (issue #3: os.tmpdir() fails on macOS because
+  // /var -> /private/var canonicalization lands outside CWD).
+  it("returns a CWD-relative name, never an absolute path", () => {
+    const name = makeTmpFileName("gws-dl");
+    expect(isAbsolute(name)).toBe(false);
+    expect(name.startsWith("/")).toBe(false);
+    expect(name.startsWith("\\")).toBe(false);
+  });
+
+  it("contains no path separators (stays in CWD)", () => {
+    const name = makeTmpFileName("gws-dl");
+    expect(name).not.toMatch(/[/\\]/);
+  });
+
+  it("uses the dotfile prefix and a random hex suffix", () => {
+    const name = makeTmpFileName("gws-dl");
+    expect(name).toMatch(/^\.gws-dl-[0-9a-f]{16}$/);
+  });
+
+  it("generates unique names per call", () => {
+    expect(makeTmpFileName("gws-dl")).not.toBe(makeTmpFileName("gws-dl"));
+  });
+
+  it("relative name round-trips through fs create/exists/unlink (cleanup path)", () => {
+    const name = makeTmpFileName("gws-dl-test");
+    writeFileSync(name, "x");
+    expect(existsSync(name)).toBe(true);
+    unlinkSync(name);
+    expect(existsSync(name)).toBe(false);
   });
 });
