@@ -22,3 +22,5 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm test
+      # Keep installs green: block CI on high+ advisories, let moderates through.
+      - run: npm audit --audit-level=high
