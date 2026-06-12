@@ -349,6 +349,170 @@ const gmailTools: ToolDef[] = [
   },
 ];
 
+// ── Tasks ───────────────────────────────────────────────────────────────
+
+const tasksTools: ToolDef[] = [
+  {
+    name: "tasks_tasklists_list",
+    description: "List the authenticated user's task lists.",
+    command: ["tasks", "tasklists", "list"],
+    params: [
+      { name: "maxResults", description: "Max task lists per page (1-100, default 20)", type: "number", required: false },
+      { name: "pageToken", description: "Token for the next page of results", type: "string", required: false },
+    ],
+  },
+  {
+    name: "tasks_tasklists_get",
+    description: "Get a task list by ID.",
+    command: ["tasks", "tasklists", "get"],
+    params: [
+      { name: "tasklist", description: "Task list ID (use \"@default\" for the user's default list)", type: "string", required: true },
+    ],
+  },
+  {
+    name: "tasks_tasklists_insert",
+    description: "Create a new task list.",
+    command: ["tasks", "tasklists", "insert"],
+    params: [],
+    bodyParams: [
+      { name: "title", description: "Task list title", type: "string", required: true },
+    ],
+  },
+  {
+    name: "tasks_tasklists_update",
+    description: "Replace a task list (full update). Use tasks_tasklists_patch for partial updates.",
+    command: ["tasks", "tasklists", "update"],
+    params: [
+      { name: "tasklist", description: "Task list ID to update", type: "string", required: true },
+    ],
+    bodyParams: [
+      { name: "title", description: "New task list title", type: "string", required: true },
+    ],
+  },
+  {
+    name: "tasks_tasklists_patch",
+    description: "Update a task list with patch semantics (only supplied fields change).",
+    command: ["tasks", "tasklists", "patch"],
+    params: [
+      { name: "tasklist", description: "Task list ID to update", type: "string", required: true },
+    ],
+    bodyParams: [
+      { name: "title", description: "New task list title", type: "string", required: false },
+    ],
+  },
+  {
+    name: "tasks_tasklists_delete",
+    description: "Delete a task list. If it contains assigned tasks, the originals (in Docs/Chat Spaces) are also removed.",
+    command: ["tasks", "tasklists", "delete"],
+    params: [
+      { name: "tasklist", description: "Task list ID to delete", type: "string", required: true },
+    ],
+  },
+  {
+    name: "tasks_tasks_list",
+    description: "List tasks in a task list. Excludes hidden and assigned tasks by default; set showHidden/showAssigned to include them.",
+    command: ["tasks", "tasks", "list"],
+    params: [
+      { name: "tasklist", description: "Task list ID (use \"@default\" for the default list)", type: "string", required: true },
+      { name: "maxResults", description: "Max tasks per page (1-100, default 20)", type: "number", required: false },
+      { name: "pageToken", description: "Token for the next page of results", type: "string", required: false },
+      { name: "showCompleted", description: "Include completed tasks (default true; ignored unless showHidden is also true)", type: "boolean", required: false },
+      { name: "showHidden", description: "Include hidden (cleared) tasks", type: "boolean", required: false },
+      { name: "showDeleted", description: "Include deleted tasks", type: "boolean", required: false },
+      { name: "showAssigned", description: "Include tasks assigned from Docs/Chat Spaces", type: "boolean", required: false },
+      { name: "completedMin", description: "Lower bound on completion date (RFC 3339)", type: "string", required: false },
+      { name: "completedMax", description: "Upper bound on completion date (RFC 3339)", type: "string", required: false },
+      { name: "dueMin", description: "Lower bound on due date (RFC 3339)", type: "string", required: false },
+      { name: "dueMax", description: "Upper bound on due date (RFC 3339)", type: "string", required: false },
+      { name: "updatedMin", description: "Lower bound on last-modified time (RFC 3339)", type: "string", required: false },
+    ],
+  },
+  {
+    name: "tasks_tasks_get",
+    description: "Get a task by ID.",
+    command: ["tasks", "tasks", "get"],
+    params: [
+      { name: "tasklist", description: "Task list ID", type: "string", required: true },
+      { name: "task", description: "Task ID", type: "string", required: true },
+    ],
+  },
+  {
+    name: "tasks_tasks_insert",
+    description: "Create a new task. Use parent to nest as a subtask, previous to position after a sibling.",
+    command: ["tasks", "tasks", "insert"],
+    params: [
+      { name: "tasklist", description: "Task list ID to insert into", type: "string", required: true },
+      { name: "parent", description: "Parent task ID (insert as a subtask under this task)", type: "string", required: false },
+      { name: "previous", description: "Sibling task ID (insert immediately after this task)", type: "string", required: false },
+    ],
+    bodyParams: [
+      { name: "title", description: "Task title", type: "string", required: true },
+      { name: "notes", description: "Free-text notes / body", type: "string", required: false },
+      { name: "status", description: "Task status: needsAction or completed", type: "string", required: false },
+      { name: "due", description: "Due date (RFC 3339, e.g. \"2026-06-01T00:00:00.000Z\")", type: "string", required: false },
+    ],
+  },
+  {
+    name: "tasks_tasks_update",
+    description: "Replace a task (full update). Use tasks_tasks_patch for partial updates.",
+    command: ["tasks", "tasks", "update"],
+    params: [
+      { name: "tasklist", description: "Task list ID", type: "string", required: true },
+      { name: "task", description: "Task ID to update", type: "string", required: true },
+    ],
+    bodyParams: [
+      { name: "title", description: "Task title", type: "string", required: true },
+      { name: "notes", description: "Free-text notes / body", type: "string", required: false },
+      { name: "status", description: "Task status: needsAction or completed", type: "string", required: false },
+      { name: "due", description: "Due date (RFC 3339)", type: "string", required: false },
+    ],
+  },
+  {
+    name: "tasks_tasks_patch",
+    description: "Update a task with patch semantics. Common use: complete a task by setting status to \"completed\".",
+    command: ["tasks", "tasks", "patch"],
+    params: [
+      { name: "tasklist", description: "Task list ID", type: "string", required: true },
+      { name: "task", description: "Task ID to update", type: "string", required: true },
+    ],
+    bodyParams: [
+      { name: "title", description: "Task title", type: "string", required: false },
+      { name: "notes", description: "Free-text notes / body", type: "string", required: false },
+      { name: "status", description: "Task status: needsAction or completed", type: "string", required: false },
+      { name: "due", description: "Due date (RFC 3339)", type: "string", required: false },
+    ],
+  },
+  {
+    name: "tasks_tasks_move",
+    description: "Move a task within its list or to another list. Use parent/previous to set position; destinationTasklist to change list.",
+    command: ["tasks", "tasks", "move"],
+    params: [
+      { name: "tasklist", description: "Source task list ID", type: "string", required: true },
+      { name: "task", description: "Task ID to move", type: "string", required: true },
+      { name: "parent", description: "New parent task ID (move as subtask under this task)", type: "string", required: false },
+      { name: "previous", description: "New sibling task ID (move immediately after this task)", type: "string", required: false },
+      { name: "destinationTasklist", description: "Destination task list ID (omit to move within the source list)", type: "string", required: false },
+    ],
+  },
+  {
+    name: "tasks_tasks_delete",
+    description: "Delete a task. If assigned from Docs/Chat Spaces, the original is also removed.",
+    command: ["tasks", "tasks", "delete"],
+    params: [
+      { name: "tasklist", description: "Task list ID", type: "string", required: true },
+      { name: "task", description: "Task ID to delete", type: "string", required: true },
+    ],
+  },
+  {
+    name: "tasks_tasks_clear",
+    description: "Hide all completed tasks in a list. Cleared tasks are not deleted but stop appearing in default list responses.",
+    command: ["tasks", "tasks", "clear"],
+    params: [
+      { name: "tasklist", description: "Task list ID to clear", type: "string", required: true },
+    ],
+  },
+];
+
 // ── Service registry ───────────────────────────────────────────────────
 
 export const SERVICE_TOOLS: Record<string, ToolDef[]> = {
@@ -357,6 +521,7 @@ export const SERVICE_TOOLS: Record<string, ToolDef[]> = {
   calendar: calendarTools,
   docs: docsTools,
   gmail: gmailTools,
+  tasks: tasksTools,
 };
 
 export const ALL_SERVICES = Object.keys(SERVICE_TOOLS);
