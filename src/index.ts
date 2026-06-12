@@ -26,7 +26,7 @@ import { z } from "zod";
 import { execFileSync } from "node:child_process";
 import { readFileSync, unlinkSync, existsSync, copyFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { getToolsForServices, ALL_SERVICES, type ToolDef } from "./services.js";
+import { getToolsForServices, ALL_SERVICES, buildAnnotations, type ToolDef } from "./services.js";
 import { executeGws, spawnGwsRaw, escapeJsonArg } from "./executor.js";
 import { buildRfc2822, base64url } from "./mime.js";
 
@@ -163,17 +163,22 @@ async function main() {
 
   const server = new McpServer({
     name: "gws-mcp-server",
-    version: "0.1.5",
+    version: "0.2.0",
   });
 
-  // Register each tool
+  // Register each tool, attaching MCP annotations derived from the ToolDef's
+  // declarative readOnly/destructive flags so clients can reason about side
+  // effects and surface clearer consent UI.
   for (const tool of tools) {
     const schema = buildZodSchema(tool);
 
-    server.tool(
+    server.registerTool(
       tool.name,
-      tool.description,
-      schema,
+      {
+        description: tool.description,
+        inputSchema: schema,
+        annotations: buildAnnotations(tool),
+      },
       async (args) => {
         const result = await executeGws(tool, args as Record<string, unknown>, gwsBinary);
 
@@ -209,13 +214,18 @@ async function main() {
       "application/vnd.google-apps.drawing": "image/png",
     };
 
-    server.tool(
+    server.registerTool(
       "drive_files_download",
-      "Download a file's content from Google Drive. Returns the text content for text files, or a base64-encoded string for binary files. For Google Docs/Sheets/Slides, exports to a readable format (plain text by default).",
       {
-        fileId: z.string().describe("The file ID to download"),
-        exportMimeType: z.string().optional().describe("For Google-native files (Docs/Sheets/Slides): export format. Defaults to text/plain for Docs, text/csv for Sheets. Examples: text/plain, text/csv, application/pdf"),
-        savePath: z.string().optional().describe("For binary files (images, PDFs): save to this local path instead of returning content inline. The file path is returned in the response."),
+        description: "Download a file's content from Google Drive. Returns the text content for text files, or a base64-encoded string for binary files. For Google Docs/Sheets/Slides, exports to a readable format (plain text by default).",
+        inputSchema: {
+          fileId: z.string().describe("The file ID to download"),
+          exportMimeType: z.string().optional().describe("For Google-native files (Docs/Sheets/Slides): export format. Defaults to text/plain for Docs, text/csv for Sheets. Examples: text/plain, text/csv, application/pdf"),
+          savePath: z.string().optional().describe("For binary files (images, PDFs): save to this local path instead of returning content inline. The file path is returned in the response."),
+        },
+        // Read-only: fetches content, never mutates Drive. (savePath writes a
+        // local file, not the user's Drive data.)
+        annotations: { readOnlyHint: true },
       },
       async (args) => {
         const tmpFile = makeTmpFileName("gws-dl");
@@ -337,19 +347,23 @@ async function main() {
   // Draft body (a base64url-encoded RFC 2822 message wrapped in
   // {message: {raw, threadId}}), so this is registered separately.
   if (services.includes("gmail")) {
-    server.tool(
+    server.registerTool(
       "gmail_drafts_create",
-      "Create a Gmail draft. Pass threadId to attach the draft to an existing conversation (it will appear as a reply within that thread). The draft is NOT sent — open Gmail to review and send.",
       {
-        to: z.string().describe("Recipient(s). Comma-separated for multiple, e.g. \"a@x.com, b@y.com\""),
-        cc: z.string().optional().describe("CC recipient(s), comma-separated"),
-        bcc: z.string().optional().describe("BCC recipient(s), comma-separated"),
-        subject: z.string().optional().describe("Subject line. When attaching to a thread via threadId, Gmail expects the subject to match the thread (typically \"Re: <original>\")."),
-        body: z.string().optional().describe("Plain-text body"),
-        htmlBody: z.string().optional().describe("HTML body. If both body and htmlBody are provided, the draft is multipart/alternative."),
-        threadId: z.string().optional().describe("Thread ID to attach this draft to. Get it from gmail_threads_list / gmail_messages_get."),
-        inReplyTo: z.string().optional().describe("Message-ID header value of the message being replied to. Improves threading robustness alongside threadId."),
-        references: z.string().optional().describe("References header value (space-separated Message-IDs of ancestor messages)."),
+        description: "Create a Gmail draft. Pass threadId to attach the draft to an existing conversation (it will appear as a reply within that thread). The draft is NOT sent — open Gmail to review and send.",
+        inputSchema: {
+          to: z.string().describe("Recipient(s). Comma-separated for multiple, e.g. \"a@x.com, b@y.com\""),
+          cc: z.string().optional().describe("CC recipient(s), comma-separated"),
+          bcc: z.string().optional().describe("BCC recipient(s), comma-separated"),
+          subject: z.string().optional().describe("Subject line. When attaching to a thread via threadId, Gmail expects the subject to match the thread (typically \"Re: <original>\")."),
+          body: z.string().optional().describe("Plain-text body"),
+          htmlBody: z.string().optional().describe("HTML body. If both body and htmlBody are provided, the draft is multipart/alternative."),
+          threadId: z.string().optional().describe("Thread ID to attach this draft to. Get it from gmail_threads_list / gmail_messages_get."),
+          inReplyTo: z.string().optional().describe("Message-ID header value of the message being replied to. Improves threading robustness alongside threadId."),
+          references: z.string().optional().describe("References header value (space-separated Message-IDs of ancestor messages)."),
+        },
+        // Additive write: creates a draft (never sends). Reversible, non-destructive.
+        annotations: { readOnlyHint: false },
       },
       async (args) => {
         try {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getToolsForServices, SERVICE_TOOLS, ALL_SERVICES } from "../services.js";
+import { getToolsForServices, SERVICE_TOOLS, ALL_SERVICES, buildAnnotations, type ToolDef } from "../services.js";
 
 describe("getToolsForServices", () => {
   it("returns tools for requested services", () => {
@@ -137,5 +137,148 @@ describe("tasks service shape", () => {
         expect(hasBody, `${tool.name} should not declare bodyParams`).toBe(false);
       }
     }
+  });
+});
+
+// ── Tool annotations (issue #5) ──────────────────────────────────────────
+
+describe("buildAnnotations mapping", () => {
+  const mk = (flags: Partial<ToolDef>): ToolDef => ({
+    name: "x",
+    description: "x",
+    command: ["x"],
+    params: [],
+    ...flags,
+  });
+
+  it("readOnly:true -> { readOnlyHint: true } and no destructiveHint", () => {
+    const a = buildAnnotations(mk({ readOnly: true }));
+    expect(a).toEqual({ readOnlyHint: true });
+    expect(a.destructiveHint).toBeUndefined();
+  });
+
+  it("destructive:true -> { readOnlyHint: false, destructiveHint: true }", () => {
+    const a = buildAnnotations(mk({ destructive: true }));
+    expect(a).toEqual({ readOnlyHint: false, destructiveHint: true });
+  });
+
+  it("no flags (additive write) -> { readOnlyHint: false } and no destructiveHint", () => {
+    const a = buildAnnotations(mk({}));
+    expect(a).toEqual({ readOnlyHint: false });
+    expect(a.destructiveHint).toBeUndefined();
+  });
+
+  it("readOnly wins if both flags are set (defensive)", () => {
+    const a = buildAnnotations(mk({ readOnly: true, destructive: true }));
+    expect(a).toEqual({ readOnlyHint: true });
+  });
+});
+
+describe("tool annotation classifications", () => {
+  const allTools = getToolsForServices(ALL_SERVICES);
+  const byName = new Map(allTools.map((t) => [t.name, t]));
+
+  it("every *_list and *_get tool is read-only", () => {
+    const reads = allTools.filter(
+      (t) => t.name.endsWith("_list") || t.name.endsWith("_get"),
+    );
+    expect(reads.length).toBeGreaterThan(0);
+    for (const tool of reads) {
+      const a = buildAnnotations(tool);
+      expect(a.readOnlyHint, `${tool.name} should be readOnlyHint:true`).toBe(true);
+      expect(a.destructiveHint, `${tool.name} should not be destructive`).toBeUndefined();
+    }
+  });
+
+  it("every *_delete tool is destructive", () => {
+    const deletes = allTools.filter((t) => t.name.endsWith("_delete"));
+    expect(deletes.length).toBeGreaterThan(0);
+    for (const tool of deletes) {
+      const a = buildAnnotations(tool);
+      expect(a.readOnlyHint, `${tool.name} should be readOnlyHint:false`).toBe(false);
+      expect(a.destructiveHint, `${tool.name} should be destructiveHint:true`).toBe(true);
+    }
+  });
+
+  it("named destructive tools carry destructiveHint:true", () => {
+    const expectDestructive = [
+      "drive_files_delete",
+      "calendar_events_delete",
+      "tasks_tasklists_delete",
+      "tasks_tasks_delete",
+      "tasks_tasks_clear",
+    ];
+    for (const name of expectDestructive) {
+      const tool = byName.get(name)!;
+      expect(tool, `${name} should exist`).toBeDefined();
+      expect(buildAnnotations(tool).destructiveHint, name).toBe(true);
+    }
+  });
+
+  it("named read tools carry readOnlyHint:true", () => {
+    const expectReadOnly = [
+      "drive_files_list", "drive_files_get", "drive_files_export",
+      "sheets_get", "sheets_values_get",
+      "calendar_events_list", "calendar_events_get",
+      "docs_get",
+      "gmail_messages_list", "gmail_messages_get", "gmail_threads_list", "gmail_threads_get",
+      "tasks_tasklists_list", "tasks_tasklists_get", "tasks_tasks_list", "tasks_tasks_get",
+    ];
+    for (const name of expectReadOnly) {
+      const tool = byName.get(name)!;
+      expect(tool, `${name} should exist`).toBeDefined();
+      expect(buildAnnotations(tool).readOnlyHint, name).toBe(true);
+    }
+  });
+
+  it("additive writes are readOnlyHint:false with no destructiveHint", () => {
+    const expectAdditive = [
+      "drive_files_create", "drive_files_copy", "drive_files_update", "drive_permissions_create",
+      "sheets_values_update", "sheets_values_append",
+      "calendar_events_insert", "calendar_events_update",
+      "docs_create", "docs_batchUpdate",
+      "tasks_tasklists_insert", "tasks_tasklists_update", "tasks_tasklists_patch",
+      "tasks_tasks_insert", "tasks_tasks_update", "tasks_tasks_patch", "tasks_tasks_move",
+    ];
+    for (const name of expectAdditive) {
+      const tool = byName.get(name)!;
+      const a = buildAnnotations(tool);
+      expect(a.readOnlyHint, name).toBe(false);
+      expect(a.destructiveHint, name).toBeUndefined();
+    }
+  });
+
+  it("gmail_threads_modify is a non-destructive write (TRASH is reversible)", () => {
+    // Judgment call: this tool can apply the TRASH label, but label changes
+    // are reversible, so it stays readOnlyHint:false without destructiveHint.
+    const tool = byName.get("gmail_threads_modify")!;
+    const a = buildAnnotations(tool);
+    expect(a.readOnlyHint).toBe(false);
+    expect(a.destructiveHint).toBeUndefined();
+  });
+
+  it("completeness: every registry tool carries exactly one classification", () => {
+    // No tool can have both flags; every tool yields an explicit readOnlyHint
+    // so future additions cannot slip through unclassified.
+    for (const tool of allTools) {
+      expect(
+        !(tool.readOnly && tool.destructive),
+        `${tool.name} cannot be both readOnly and destructive`,
+      ).toBe(true);
+      const a = buildAnnotations(tool);
+      expect(typeof a.readOnlyHint, `${tool.name} must declare readOnlyHint`).toBe("boolean");
+    }
+  });
+
+  it("classification counts match the intended split (16 read / 5 destructive / 18 additive)", () => {
+    const read = allTools.filter((t) => buildAnnotations(t).readOnlyHint === true).length;
+    const destructive = allTools.filter((t) => buildAnnotations(t).destructiveHint === true).length;
+    const additive = allTools.filter(
+      (t) => buildAnnotations(t).readOnlyHint === false && !buildAnnotations(t).destructiveHint,
+    ).length;
+    expect(read).toBe(16);
+    expect(destructive).toBe(5);
+    expect(additive).toBe(18);
+    expect(read + destructive + additive).toBe(allTools.length);
   });
 });

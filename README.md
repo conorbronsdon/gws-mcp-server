@@ -19,7 +19,7 @@ Google Workspace for AI agents: Gmail, Calendar, Drive, Sheets, Docs, and Tasks 
 
 ## Why?
 
-The `gws` CLI had a built-in MCP server that was [removed in v0.8.0](https://github.com/googleworkspace/cli/pull/275) because it exposed 200-400 tools — causing context window bloat in MCP clients. This server takes a curated approach: you choose which Google services to expose, and only a focused set of high-value, narrowly scoped operations are registered as tools.
+The `gws` CLI had a built-in MCP server that was [removed in v0.8.0](https://github.com/googleworkspace/cli/pull/275) because it exposed 200-400 tools — causing context window bloat in MCP clients. This server takes a curated approach: you choose which Google services to expose, and only a focused set of high-value, narrowly scoped operations are registered as tools. Every tool declares MCP `readOnlyHint`/`destructiveHint` annotations so clients can reason about side effects and surface clearer consent prompts.
 
 ## Prerequisites
 

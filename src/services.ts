@@ -22,6 +22,45 @@ export interface ToolDef {
   supportsUpload?: boolean;
   /** Default params injected into every call (can be overridden by caller) */
   defaultParams?: Record<string, unknown>;
+  /**
+   * Read-only tool: no side effects on the user's data. Maps to MCP
+   * annotation `readOnlyHint: true`. Mutually exclusive with `destructive`.
+   */
+  readOnly?: boolean;
+  /**
+   * Destructive write: irreversibly removes or overwrites user data (deletes).
+   * Maps to MCP annotations `{ readOnlyHint: false, destructiveHint: true }`.
+   * Additive/reversible writes leave this unset (they emit `readOnlyHint: false`
+   * with no destructive hint).
+   */
+  destructive?: boolean;
+}
+
+/** MCP tool annotations derived from a ToolDef's read/destructive flags. */
+export interface ToolAnnotationHints {
+  readOnlyHint: boolean;
+  destructiveHint?: boolean;
+}
+
+/**
+ * Map a ToolDef's declarative flags into MCP `annotations`.
+ *
+ * Every tool gets an explicit `readOnlyHint` (true for reads, false for any
+ * write) so clients always know the side-effect class. `destructiveHint: true`
+ * is added only for destructive writes (deletes). Additive/reversible writes
+ * (creates, updates, label changes) carry `readOnlyHint: false` and no
+ * destructive hint — the MCP default destructiveHint is true, so omitting it
+ * would wrongly flag them; we leave it off intentionally to mean "non-destructive".
+ */
+export function buildAnnotations(tool: ToolDef): ToolAnnotationHints {
+  if (tool.readOnly) {
+    return { readOnlyHint: true };
+  }
+  if (tool.destructive) {
+    return { readOnlyHint: false, destructiveHint: true };
+  }
+  // Write-but-additive (or reversible) tool.
+  return { readOnlyHint: false };
 }
 
 export interface ParamDef {
@@ -49,6 +88,7 @@ const driveTools: ToolDef[] = [
       { name: "orderBy", description: "Sort order (e.g. \"modifiedTime desc\")", type: "string", required: false },
     ],
     defaultParams: DRIVE_SHARED_DEFAULTS,
+    readOnly: true,
   },
   {
     name: "drive_files_get",
@@ -59,6 +99,7 @@ const driveTools: ToolDef[] = [
       { name: "fields", description: "Fields to include", type: "string", required: false },
     ],
     defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
+    readOnly: true,
   },
   {
     name: "drive_files_create",
@@ -74,6 +115,7 @@ const driveTools: ToolDef[] = [
     ],
     supportsUpload: true,
     defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
+    // Additive write.
   },
   {
     name: "drive_files_copy",
@@ -113,6 +155,7 @@ const driveTools: ToolDef[] = [
       { name: "fileId", description: "The file ID to delete", type: "string", required: true },
     ],
     defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
+    destructive: true,
   },
   {
     name: "drive_files_export",
@@ -122,6 +165,7 @@ const driveTools: ToolDef[] = [
       { name: "fileId", description: "The Google Workspace file ID to export", type: "string", required: true },
       { name: "mimeType", description: "Export format: text/plain, text/csv, application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document (docx), application/vnd.openxmlformats-officedocument.spreadsheetml.sheet (xlsx)", type: "string", required: true },
     ],
+    readOnly: true,
   },
   {
     name: "drive_permissions_create",
@@ -149,6 +193,7 @@ const sheetsTools: ToolDef[] = [
       { name: "spreadsheetId", description: "The spreadsheet ID", type: "string", required: true },
       { name: "includeGridData", description: "Include grid data", type: "boolean", required: false },
     ],
+    readOnly: true,
   },
   {
     name: "sheets_values_get",
@@ -160,6 +205,7 @@ const sheetsTools: ToolDef[] = [
       { name: "majorDimension", description: "ROWS or COLUMNS", type: "string", required: false },
       { name: "valueRenderOption", description: "FORMATTED_VALUE, UNFORMATTED_VALUE, or FORMULA", type: "string", required: false },
     ],
+    readOnly: true,
   },
   {
     name: "sheets_values_update",
@@ -205,6 +251,7 @@ const calendarTools: ToolDef[] = [
       { name: "orderBy", description: "Sort order: startTime or updated", type: "string", required: false },
       { name: "q", description: "Free-text search", type: "string", required: false },
     ],
+    readOnly: true,
   },
   {
     name: "calendar_events_get",
@@ -214,6 +261,7 @@ const calendarTools: ToolDef[] = [
       { name: "calendarId", description: "Calendar ID", type: "string", required: true },
       { name: "eventId", description: "Event ID", type: "string", required: true },
     ],
+    readOnly: true,
   },
   {
     name: "calendar_events_insert",
@@ -253,6 +301,7 @@ const calendarTools: ToolDef[] = [
       { name: "calendarId", description: "Calendar ID", type: "string", required: true },
       { name: "eventId", description: "Event ID to delete", type: "string", required: true },
     ],
+    destructive: true,
   },
 ];
 
@@ -266,6 +315,7 @@ const docsTools: ToolDef[] = [
     params: [
       { name: "documentId", description: "The document ID", type: "string", required: true },
     ],
+    readOnly: true,
   },
   {
     name: "docs_create",
@@ -302,6 +352,7 @@ const gmailTools: ToolDef[] = [
       { name: "maxResults", description: "Max messages to return", type: "number", required: false },
       { name: "labelIds", description: "Label IDs to filter by", type: "string", required: false },
     ],
+    readOnly: true,
   },
   {
     name: "gmail_messages_get",
@@ -312,6 +363,7 @@ const gmailTools: ToolDef[] = [
       { name: "id", description: "Message ID", type: "string", required: true },
       { name: "format", description: "Response format: full, metadata, minimal, raw", type: "string", required: false },
     ],
+    readOnly: true,
   },
   {
     name: "gmail_threads_list",
@@ -322,6 +374,7 @@ const gmailTools: ToolDef[] = [
       { name: "q", description: "Gmail search query", type: "string", required: false },
       { name: "maxResults", description: "Max threads to return", type: "number", required: false },
     ],
+    readOnly: true,
   },
   {
     name: "gmail_threads_get",
@@ -332,6 +385,7 @@ const gmailTools: ToolDef[] = [
       { name: "id", description: "Thread ID", type: "string", required: true },
       { name: "format", description: "Response format: full, metadata, minimal", type: "string", required: false },
     ],
+    readOnly: true,
   },
   {
     name: "gmail_threads_modify",
@@ -346,6 +400,10 @@ const gmailTools: ToolDef[] = [
       { name: "addLabelIds", description: "JSON array of label IDs to add, e.g. [\"STARRED\"]", type: "string", required: false },
       { name: "removeLabelIds", description: "JSON array of label IDs to remove, e.g. [\"INBOX\",\"UNREAD\"]", type: "string", required: false },
     ],
+    // Judgment call: this can apply the TRASH label, but label changes (incl.
+    // trashing) are reversible — untrashing restores the thread. It is a write,
+    // not a destructive (irreversible) one, so it stays readOnlyHint:false with
+    // no destructiveHint. Permanent deletion is not exposed by this tool.
   },
 ];
 
@@ -360,6 +418,7 @@ const tasksTools: ToolDef[] = [
       { name: "maxResults", description: "Max task lists per page (1-100, default 20)", type: "number", required: false },
       { name: "pageToken", description: "Token for the next page of results", type: "string", required: false },
     ],
+    readOnly: true,
   },
   {
     name: "tasks_tasklists_get",
@@ -368,6 +427,7 @@ const tasksTools: ToolDef[] = [
     params: [
       { name: "tasklist", description: "Task list ID (use \"@default\" for the user's default list)", type: "string", required: true },
     ],
+    readOnly: true,
   },
   {
     name: "tasks_tasklists_insert",
@@ -407,6 +467,7 @@ const tasksTools: ToolDef[] = [
     params: [
       { name: "tasklist", description: "Task list ID to delete", type: "string", required: true },
     ],
+    destructive: true,
   },
   {
     name: "tasks_tasks_list",
@@ -426,6 +487,7 @@ const tasksTools: ToolDef[] = [
       { name: "dueMax", description: "Upper bound on due date (RFC 3339)", type: "string", required: false },
       { name: "updatedMin", description: "Lower bound on last-modified time (RFC 3339)", type: "string", required: false },
     ],
+    readOnly: true,
   },
   {
     name: "tasks_tasks_get",
@@ -435,6 +497,7 @@ const tasksTools: ToolDef[] = [
       { name: "tasklist", description: "Task list ID", type: "string", required: true },
       { name: "task", description: "Task ID", type: "string", required: true },
     ],
+    readOnly: true,
   },
   {
     name: "tasks_tasks_insert",
@@ -502,6 +565,7 @@ const tasksTools: ToolDef[] = [
       { name: "tasklist", description: "Task list ID", type: "string", required: true },
       { name: "task", description: "Task ID to delete", type: "string", required: true },
     ],
+    destructive: true,
   },
   {
     name: "tasks_tasks_clear",
@@ -510,6 +574,10 @@ const tasksTools: ToolDef[] = [
     params: [
       { name: "tasklist", description: "Task list ID to clear", type: "string", required: true },
     ],
+    // Clear hides completed tasks rather than permanently deleting them, but it
+    // bulk-mutates list visibility with no per-task undo, so we treat it as
+    // destructive alongside the deletes (matches the issue's classification).
+    destructive: true,
   },
 ];
 
