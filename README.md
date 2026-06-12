@@ -49,7 +49,7 @@ npm install && npm run build
       "command": "npx",
       "args": [
         "gws-mcp-server",
-        "--services", "drive,sheets,calendar,docs,gmail"
+        "--services", "drive,sheets,calendar,docs,gmail,tasks"
       ]
     }
   }
@@ -179,7 +179,7 @@ Issues and pull requests are welcome. The most useful contributions are new tool
 
 ## About
 
-Built and maintained by [Conor Bronsdon](https://github.com/conorbronsdon). I host the [Chain of Thought](https://chainofthought.show) podcast, which covers AI infrastructure, developer tools, and how practitioners actually use this stuff. I built this to give the agent workflows that run the show safe, curated access to Gmail, Calendar, Drive, Sheets, and Docs.
+Built and maintained by [Conor Bronsdon](https://github.com/conorbronsdon). I host the [Chain of Thought](https://chainofthought.show) podcast, which covers AI infrastructure, developer tools, and how practitioners actually use this stuff. I built this to give the agent workflows that run the show safe, curated access to Gmail, Calendar, Drive, Sheets, Docs, and Tasks.
 
 <a href="https://glama.ai/mcp/servers/conorbronsdon/gws-mcp-server">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/conorbronsdon/gws-mcp-server/badge" alt="gws-mcp-server MCP server" />
