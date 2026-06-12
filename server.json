@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.conorbronsdon/gws-mcp-server",
   "title": "Google Workspace MCP Server",
-  "description": "MCP server that exposes Google Workspace CLI (gws) as 41 curated Model Context Protocol tools for Drive, Sheets, Calendar, Docs, Gmail, and Tasks. Select which services to expose via --services flag to avoid context bloat.",
+  "description": "Google Workspace as 41 curated MCP tools: Gmail, Calendar, Drive, Sheets, Docs, and Tasks.",
   "repository": {
     "url": "https://github.com/conorbronsdon/gws-mcp-server",
     "source": "github"
