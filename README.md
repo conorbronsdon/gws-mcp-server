@@ -1,13 +1,21 @@
+<div align="center">
+
 # gws-mcp-server
 
-<a href="https://glama.ai/mcp/servers/conorbronsdon/gws-mcp-server">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/conorbronsdon/gws-mcp-server/badge" alt="gws-mcp-server MCP server" />
-</a>
+Google Workspace for AI agents: Gmail, Calendar, Drive, Sheets, and Docs as a curated set of 27 [Model Context Protocol](https://modelcontextprotocol.io/) tools, built on the official [Google Workspace CLI (`gws`)](https://github.com/googleworkspace/cli).
 
-[![npm version](https://img.shields.io/npm/v/gws-mcp-server)](https://www.npmjs.com/package/gws-mcp-server)
-[![license](https://img.shields.io/npm/l/gws-mcp-server)](./LICENSE)
+[![npm version](https://img.shields.io/npm/v/gws-mcp-server?style=flat-square)](https://www.npmjs.com/package/gws-mcp-server)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+[![Node](https://img.shields.io/badge/Node-18+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Podcast](https://img.shields.io/badge/Podcast-Chain_of_Thought-purple?style=flat-square)](https://chainofthought.show)
+[![X](https://img.shields.io/badge/X-@ConorBronsdon-black?style=flat-square&logo=x)](https://x.com/ConorBronsdon)
 
-MCP server that exposes [Google Workspace CLI (`gws`)](https://github.com/googleworkspace/cli) operations as [Model Context Protocol](https://modelcontextprotocol.io/) tools.
+<img src="docs/demo.gif" alt="Demo: an agent calls the calendar_events_list tool and gets events back (sample data)" width="800">
+
+</div>
+
+---
+
 
 ## Why?
 
@@ -73,7 +81,7 @@ npm install && npm run build
 
 ## Available services & tools
 
-### `drive` (8 tools)
+### `drive` (9 tools)
 - `drive_files_list` — Search and list files
 - `drive_files_get` — Get file metadata
 - `drive_files_create` — Create files (with optional upload)
@@ -81,6 +89,7 @@ npm install && npm run build
 - `drive_files_update` — Update file metadata/content
 - `drive_files_delete` — Delete files
 - `drive_files_export` — Export Google Workspace files (Doc, Sheet, Slide) to other formats
+- `drive_files_download` — Download file content (text inline, binary as base64 or saved to a path; Google-native files are exported to a readable format)
 - `drive_permissions_create` — Share files
 
 ### `sheets` (4 tools)
@@ -101,13 +110,15 @@ npm install && npm run build
 - `docs_create` — Create documents
 - `docs_batchUpdate` — Apply document updates
 
-### `gmail` (4 tools)
+### `gmail` (6 tools)
 - `gmail_messages_list` — Search messages
 - `gmail_messages_get` — Read a message
 - `gmail_threads_list` — Search threads
 - `gmail_threads_get` — Read a full thread
+- `gmail_threads_modify` — Add/remove labels on a thread (archive, mark read, star)
+- `gmail_drafts_create` — Create a draft (plain text and/or HTML, with reply threading via `threadId`). Drafts are never auto-sent
 
-**Total: 24 tools** (vs 200-400 in the old implementation)
+**Total: 27 tools** (vs 200-400 in the old implementation)
 
 ## Adding new tools
 
@@ -133,7 +144,40 @@ Edit `src/services.ts` to add tool definitions. Each tool maps directly to a `gw
 MCP Client (Claude) ←→ stdio ←→ gws-mcp-server ←→ gws CLI ←→ Google APIs
 ```
 
-The server is a thin wrapper: it translates MCP tool calls into `gws` CLI invocations, passes `--params` and `--json` as appropriate, and returns the JSON output.
+The server is a thin wrapper: it translates MCP tool calls into `gws` CLI invocations, passes `--params` and `--json` as appropriate, and returns the JSON output. Authentication stays in the `gws` CLI — this server never sees or stores your Google credentials.
+
+## Development
+
+```bash
+git clone https://github.com/conorbronsdon/gws-mcp-server.git
+cd gws-mcp-server
+npm ci
+npm run lint    # type-check
+npm run build
+npm test        # vitest, mocks the executor layer — no real gws calls
+```
+
+## Contributing
+
+Issues and pull requests are welcome. The most useful contributions are new tool definitions in `src/services.ts` for high-value `gws` operations (see "Adding new tools" above). Keep the curated contract: a focused set of narrowly scoped tools, not a 1:1 mirror of every Google API surface. See [SECURITY.md](./SECURITY.md) for how to report vulnerabilities.
+
+## About
+
+Built and maintained by [Conor Bronsdon](https://github.com/conorbronsdon). I host the [Chain of Thought](https://chainofthought.show) podcast, which covers AI infrastructure, developer tools, and how practitioners actually use this stuff. I built this to give the agent workflows that run the show safe, curated access to Gmail, Calendar, Drive, Sheets, and Docs.
+
+<a href="https://glama.ai/mcp/servers/conorbronsdon/gws-mcp-server">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/conorbronsdon/gws-mcp-server/badge" alt="gws-mcp-server MCP server" />
+</a>
+
+Companion tools:
+
+- [Transistor-MCP](https://github.com/conorbronsdon/Transistor-MCP): the Transistor.fm MCP server. Episodes, transcripts, and download counts.
+- [substack-mcp](https://github.com/conorbronsdon/substack-mcp): read posts and manage drafts on Substack, safe for agent workflows.
+- [podcastindex-mcp](https://github.com/conorbronsdon/podcastindex-mcp): the Podcast Index MCP server, search by person or topic, trending shows, feed health.
+- [op3-mcp](https://github.com/conorbronsdon/op3-mcp): podcast analytics through OP3. Downloads, geography, apps. Read-only.
+- [ai-tools-for-creators](https://github.com/conorbronsdon/ai-tools-for-creators): a curated list of AI skills and MCP servers for people who ship ideas for a living.
+
+More at [chainofthought.show](https://chainofthought.show) and on [X](https://x.com/ConorBronsdon).
 
 ---
 
