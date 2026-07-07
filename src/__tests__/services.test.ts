@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { getToolsForServices, SERVICE_TOOLS, ALL_SERVICES, buildAnnotations, type ToolDef } from "../services.js";
+import { buildArgs } from "../executor.js";
 
 describe("getToolsForServices", () => {
   it("returns tools for requested services", () => {
@@ -62,11 +63,11 @@ describe("tool definitions integrity", () => {
     expect(SERVICE_TOOLS["calendar"].length).toBe(5);
     expect(SERVICE_TOOLS["docs"].length).toBe(3);
     expect(SERVICE_TOOLS["gmail"].length).toBe(5);
-    expect(SERVICE_TOOLS["tasks"].length).toBe(14);
+    expect(SERVICE_TOOLS["tasks"].length).toBe(12);
   });
 
-  it("total tool count is 39", () => {
-    expect(allTools.length).toBe(39);
+  it("total tool count is 37", () => {
+    expect(allTools.length).toBe(37);
   });
 
   it("all params have required fields", () => {
@@ -137,6 +138,54 @@ describe("tasks service shape", () => {
         expect(hasBody, `${tool.name} should not declare bodyParams`).toBe(false);
       }
     }
+  });
+});
+
+// ── Tasks update tools use patch semantics ───────────────────────────────
+// The Tasks API's PUT methods require the resource's own `id` inside the
+// request body, which these schemas cannot supply — every call through the
+// old `update` verb failed with "Missing task ID" / "Missing task list ID".
+// The tools therefore route to the `patch` verb, where only supplied fields
+// change and partial bodies are valid.
+
+describe("tasks update tools (patch semantics)", () => {
+  const byName = new Map(SERVICE_TOOLS["tasks"].map((t) => [t.name, t]));
+  const tasksUpdate = byName.get("tasks_tasks_update")!;
+  const tasklistsUpdate = byName.get("tasks_tasklists_update")!;
+
+  it("tasks_tasks_update routes to the patch verb", () => {
+    expect(tasksUpdate.command).toEqual(["tasks", "tasks", "patch"]);
+  });
+
+  it("tasks_tasklists_update routes to the patch verb", () => {
+    expect(tasklistsUpdate.command).toEqual(["tasks", "tasklists", "patch"]);
+  });
+
+  it("all body fields are optional, so partial updates are schema-valid", () => {
+    for (const tool of [tasksUpdate, tasklistsUpdate]) {
+      for (const p of tool.bodyParams!) {
+        expect(p.required, `${tool.name}.${p.name} must be optional`).toBe(false);
+      }
+    }
+  });
+
+  it("a title-only call sends only title in the body (unsupplied fields untouched)", () => {
+    const args = buildArgs(tasksUpdate, {
+      tasklist: "@default",
+      task: "abc123",
+      title: "New title",
+    });
+    expect(args.slice(0, 3)).toEqual(["tasks", "tasks", "patch"]);
+    const jsonIdx = args.indexOf("--json");
+    expect(jsonIdx).toBeGreaterThan(-1);
+    // Body must contain exactly the supplied field — nothing injected that
+    // would overwrite notes/status/due on the server.
+    expect(JSON.parse(args[jsonIdx + 1])).toEqual({ title: "New title" });
+  });
+
+  it("no separate *_patch tools remain (one safe update verb per resource)", () => {
+    expect(byName.has("tasks_tasks_patch")).toBe(false);
+    expect(byName.has("tasks_tasklists_patch")).toBe(false);
   });
 });
 
@@ -237,8 +286,8 @@ describe("tool annotation classifications", () => {
       "sheets_values_update", "sheets_values_append",
       "calendar_events_insert", "calendar_events_update",
       "docs_create", "docs_batchUpdate",
-      "tasks_tasklists_insert", "tasks_tasklists_update", "tasks_tasklists_patch",
-      "tasks_tasks_insert", "tasks_tasks_update", "tasks_tasks_patch", "tasks_tasks_move",
+      "tasks_tasklists_insert", "tasks_tasklists_update",
+      "tasks_tasks_insert", "tasks_tasks_update", "tasks_tasks_move",
     ];
     for (const name of expectAdditive) {
       const tool = byName.get(name)!;
@@ -270,7 +319,7 @@ describe("tool annotation classifications", () => {
     }
   });
 
-  it("classification counts match the intended split (16 read / 5 destructive / 18 additive)", () => {
+  it("classification counts match the intended split (16 read / 5 destructive / 16 additive)", () => {
     const read = allTools.filter((t) => buildAnnotations(t).readOnlyHint === true).length;
     const destructive = allTools.filter((t) => buildAnnotations(t).destructiveHint === true).length;
     const additive = allTools.filter(
@@ -278,7 +327,7 @@ describe("tool annotation classifications", () => {
     ).length;
     expect(read).toBe(16);
     expect(destructive).toBe(5);
-    expect(additive).toBe(18);
+    expect(additive).toBe(16);
     expect(read + destructive + additive).toBe(allTools.length);
   });
 });

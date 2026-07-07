@@ -2,7 +2,7 @@
 
 # gws-mcp-server
 
-Google Workspace for AI agents: Gmail, Calendar, Drive, Sheets, Docs, and Tasks as a curated set of 41 [Model Context Protocol](https://modelcontextprotocol.io/) tools, built on the official [Google Workspace CLI (`gws`)](https://github.com/googleworkspace/cli).
+Google Workspace for AI agents: Gmail, Calendar, Drive, Sheets, Docs, and Tasks as a curated set of 39 [Model Context Protocol](https://modelcontextprotocol.io/) tools, built on the official [Google Workspace CLI (`gws`)](https://github.com/googleworkspace/cli).
 
 [![npm version](https://img.shields.io/npm/v/gws-mcp-server?style=flat-square)](https://www.npmjs.com/package/gws-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
@@ -118,23 +118,21 @@ npm install && npm run build
 - `gmail_threads_modify` — Add/remove labels on a thread (archive, mark read, star)
 - `gmail_drafts_create` — Create a draft (plain text and/or HTML, with reply threading via `threadId`). Drafts are never auto-sent
 
-### `tasks` (14 tools)
+### `tasks` (12 tools)
 - `tasks_tasklists_list` — List task lists
 - `tasks_tasklists_get` — Get a task list
 - `tasks_tasklists_insert` — Create a task list
-- `tasks_tasklists_update` — Replace a task list (full update)
-- `tasks_tasklists_patch` — Update a task list (partial)
+- `tasks_tasklists_update` — Update a task list (only supplied fields change)
 - `tasks_tasklists_delete` — Delete a task list
 - `tasks_tasks_list` — List tasks (filters: completed/hidden/due dates)
 - `tasks_tasks_get` — Get a task
 - `tasks_tasks_insert` — Create a task (optionally nested or positioned)
-- `tasks_tasks_update` — Replace a task (full update)
-- `tasks_tasks_patch` — Update a task (common use: mark complete)
+- `tasks_tasks_update` — Update a task (only supplied fields change; common use: mark complete)
 - `tasks_tasks_move` — Move a task within/across lists or reorder
 - `tasks_tasks_delete` — Delete a task
 - `tasks_tasks_clear` — Hide all completed tasks in a list
 
-**Total: 41 tools** (vs 200-400 in the old implementation)
+**Total: 39 tools** (vs 200-400 in the old implementation)
 
 ## Adding new tools
 
