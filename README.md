@@ -102,7 +102,7 @@ npm install && npm run build
 - `calendar_events_list` — List events
 - `calendar_events_get` — Get event details
 - `calendar_events_insert` — Create events
-- `calendar_events_update` — Update events
+- `calendar_events_update` — Update events (only supplied fields change)
 - `calendar_events_delete` — Delete events
 
 ### `docs` (3 tools)
