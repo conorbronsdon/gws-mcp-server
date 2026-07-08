@@ -102,7 +102,7 @@ npm install && npm run build
 - `calendar_events_list` — List events
 - `calendar_events_get` — Get event details
 - `calendar_events_insert` — Create events
-- `calendar_events_update` — Update events
+- `calendar_events_update` — Update events (only supplied fields change)
 - `calendar_events_delete` — Delete events
 
 ### `docs` (3 tools)
@@ -131,6 +131,8 @@ npm install && npm run build
 - `tasks_tasks_move` — Move a task within/across lists or reorder
 - `tasks_tasks_delete` — Delete a task
 - `tasks_tasks_clear` — Hide all completed tasks in a list
+
+> **Update semantics:** the `*_update` tools (calendar events, tasks, task lists) use the Google API's `patch` verb — they merge the fields you supply and leave the rest untouched. To *clear* an existing value, pass it explicitly (e.g. an empty string) rather than omitting it.
 
 **Total: 39 tools** (vs 200-400 in the old implementation)
 

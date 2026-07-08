@@ -189,6 +189,40 @@ describe("tasks update tools (patch semantics)", () => {
   });
 });
 
+// ── Calendar event updates use patch semantics ───────────────────────────
+// The Calendar API's events.update (PUT) always replaces the entire event
+// and rejects bodies missing required event fields (e.g. "Missing end
+// time"), so partial calls through the old verb failed. The tool routes to
+// events.patch instead, where only supplied fields change.
+
+describe("calendar_events_update (patch semantics)", () => {
+  const tool = SERVICE_TOOLS["calendar"].find((t) => t.name === "calendar_events_update")!;
+
+  it("routes to the patch verb", () => {
+    expect(tool.command).toEqual(["calendar", "events", "patch"]);
+  });
+
+  it("all body fields are optional, so partial updates are schema-valid", () => {
+    for (const p of tool.bodyParams!) {
+      expect(p.required, `${p.name} must be optional`).toBe(false);
+    }
+  });
+
+  it("a summary-only call sends only summary in the body (start/end not required)", () => {
+    const args = buildArgs(tool, {
+      calendarId: "primary",
+      eventId: "evt123",
+      summary: "New title",
+    });
+    expect(args.slice(0, 3)).toEqual(["calendar", "events", "patch"]);
+    const jsonIdx = args.indexOf("--json");
+    expect(jsonIdx).toBeGreaterThan(-1);
+    // Body must contain exactly the supplied field — start/end/description
+    // stay untouched on the server.
+    expect(JSON.parse(args[jsonIdx + 1])).toEqual({ summary: "New title" });
+  });
+});
+
 // ── Tool annotations (issue #5) ──────────────────────────────────────────
 
 describe("buildAnnotations mapping", () => {

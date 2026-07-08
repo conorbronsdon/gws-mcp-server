@@ -280,8 +280,8 @@ const calendarTools: ToolDef[] = [
   },
   {
     name: "calendar_events_update",
-    description: "Update an existing calendar event.",
-    command: ["calendar", "events", "update"],
+    description: "Update an existing calendar event with patch semantics (only supplied fields change).",
+    command: ["calendar", "events", "patch"],
     params: [
       { name: "calendarId", description: "Calendar ID", type: "string", required: true },
       { name: "eventId", description: "Event ID to update", type: "string", required: true },
