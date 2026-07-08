@@ -440,18 +440,7 @@ const tasksTools: ToolDef[] = [
   },
   {
     name: "tasks_tasklists_update",
-    description: "Replace a task list (full update). Use tasks_tasklists_patch for partial updates.",
-    command: ["tasks", "tasklists", "update"],
-    params: [
-      { name: "tasklist", description: "Task list ID to update", type: "string", required: true },
-    ],
-    bodyParams: [
-      { name: "title", description: "New task list title", type: "string", required: true },
-    ],
-  },
-  {
-    name: "tasks_tasklists_patch",
-    description: "Update a task list with patch semantics (only supplied fields change).",
+    description: "Update a task list (only supplied fields change).",
     command: ["tasks", "tasklists", "patch"],
     params: [
       { name: "tasklist", description: "Task list ID to update", type: "string", required: true },
@@ -517,22 +506,7 @@ const tasksTools: ToolDef[] = [
   },
   {
     name: "tasks_tasks_update",
-    description: "Replace a task (full update). Use tasks_tasks_patch for partial updates.",
-    command: ["tasks", "tasks", "update"],
-    params: [
-      { name: "tasklist", description: "Task list ID", type: "string", required: true },
-      { name: "task", description: "Task ID to update", type: "string", required: true },
-    ],
-    bodyParams: [
-      { name: "title", description: "Task title", type: "string", required: true },
-      { name: "notes", description: "Free-text notes / body", type: "string", required: false },
-      { name: "status", description: "Task status: needsAction or completed", type: "string", required: false },
-      { name: "due", description: "Due date (RFC 3339)", type: "string", required: false },
-    ],
-  },
-  {
-    name: "tasks_tasks_patch",
-    description: "Update a task with patch semantics. Common use: complete a task by setting status to \"completed\".",
+    description: "Update a task (only supplied fields change). Common use: complete a task by setting status to \"completed\".",
     command: ["tasks", "tasks", "patch"],
     params: [
       { name: "tasklist", description: "Task list ID", type: "string", required: true },
