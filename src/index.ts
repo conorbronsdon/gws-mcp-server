@@ -163,7 +163,7 @@ async function main() {
 
   const server = new McpServer({
     name: "gws-mcp-server",
-    version: "0.3.0",
+    version: "0.4.0",
   });
 
   // Register each tool, attaching MCP annotations derived from the ToolDef's

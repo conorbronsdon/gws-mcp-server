@@ -154,6 +154,10 @@ Edit `src/services.ts` to add tool definitions. Each tool maps directly to a `gw
 }
 ```
 
+### Typed errors
+
+Tool call failures are mapped to a typed error hierarchy (`src/errors.ts`): `AuthenticationError` (401/403), `RateLimitError` (429), `ValidationError` (400), `NotFoundError` (404, with a shared-drive access hint for `drive` commands), and `ServerError` (5xx), all extending a base `GwsError`. Unlike an HTTP API client, this server has no response object to read a status code from — it spawns the `gws` CLI as a subprocess and only sees plain text (stdout/stderr, or a rejected promise's `.message`). `mapGwsErrorToTyped()` recovers a status-like code from that text, handling both a raw JSON error body (Google's own `{"error":{"code":...,"message":...}}` shape) and plain text containing an HTTP-status-like token (e.g. `"Error 404: ..."`). If neither pattern is found, the original message passes through unchanged rather than forcing an invented status onto it.
+
 ## Architecture
 
 ```
