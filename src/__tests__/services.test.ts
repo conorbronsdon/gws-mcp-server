@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { getToolsForServices, SERVICE_TOOLS, ALL_SERVICES, buildAnnotations, type ToolDef } from "../services.js";
-import { buildArgs } from "../executor.js";
+import { buildArgs, escapeJsonArg } from "../executor.js";
 
 describe("getToolsForServices", () => {
   it("returns tools for requested services", () => {
@@ -180,7 +180,9 @@ describe("tasks update tools (patch semantics)", () => {
     expect(jsonIdx).toBeGreaterThan(-1);
     // Body must contain exactly the supplied field — nothing injected that
     // would overwrite notes/status/due on the server.
-    expect(JSON.parse(args[jsonIdx + 1])).toEqual({ title: "New title" });
+    // Compare against the same escaping buildArgs applies, so this holds on
+    // Windows (cmd-escaped) as well as Linux/macOS (escapeJsonArg is a no-op).
+    expect(args[jsonIdx + 1]).toBe(escapeJsonArg(JSON.stringify({ title: "New title" })));
   });
 
   it("no separate *_patch tools remain (one safe update verb per resource)", () => {
@@ -219,7 +221,9 @@ describe("calendar_events_update (patch semantics)", () => {
     expect(jsonIdx).toBeGreaterThan(-1);
     // Body must contain exactly the supplied field — start/end/description
     // stay untouched on the server.
-    expect(JSON.parse(args[jsonIdx + 1])).toEqual({ summary: "New title" });
+    // Compare against the same escaping buildArgs applies, so this holds on
+    // Windows (cmd-escaped) as well as Linux/macOS (escapeJsonArg is a no-op).
+    expect(args[jsonIdx + 1]).toBe(escapeJsonArg(JSON.stringify({ summary: "New title" })));
   });
 });
 
