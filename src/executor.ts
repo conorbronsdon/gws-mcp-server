@@ -10,6 +10,7 @@ import { spawn } from "node:child_process";
 import { resolve, normalize } from "node:path";
 import { existsSync } from "node:fs";
 import type { ToolDef } from "./services.js";
+import { mapGwsErrorToTyped } from "./errors.js";
 
 /** Max output size before truncation (characters) */
 const MAX_OUTPUT = 100_000;
@@ -197,14 +198,17 @@ export async function executeGws(
     return { success: true, output: stdout || "(empty response)" };
   } catch (err: unknown) {
     const error = err as { message?: string };
-    let message = error.message || "Unknown error";
+    const rawMessage = error.message || "Unknown error";
 
-    // Enhance Drive 404 errors with actionable hints
-    if (message.includes("404") && message.includes("not found") && tool.command[0] === "drive") {
-      message += "\n\nHint: If this file is in a shared drive, ensure supportsAllDrives is set (this should be automatic). Check that the file ID is correct and the authenticated account has access.";
-    }
+    // Map the raw CLI error text to a typed error (see ./errors.ts). This
+    // recovers a status-like code from the text where possible (JSON error
+    // body or a plain-text status token) and builds a fully-formatted
+    // message — including the Drive shared-drive hint for 404s on drive
+    // commands, which used to be appended inline here. Messages with no
+    // recognizable status code pass through unchanged (legacy fallback).
+    const typedError = mapGwsErrorToTyped(rawMessage, tool.command);
 
-    console.error(`[gws-mcp] Error: ${message}`);
-    return { success: false, output: "", error: message };
+    console.error(`[gws-mcp] Error: ${typedError.message}`);
+    return { success: false, output: "", error: typedError.message };
   }
 }

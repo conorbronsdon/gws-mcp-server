@@ -1,6 +1,24 @@
 import { describe, it, expect, vi } from "vitest";
-import { buildArgs, escapeForCmd, escapeJsonArg, sanitizeUploadPath } from "../executor.js";
+import { EventEmitter } from "node:events";
 import type { ToolDef } from "../services.js";
+
+// executeGws spawns the gws CLI via node:child_process's spawn(). Mock it so
+// the executeGws wiring tests below (error mapping through to ExecResult.error)
+// can drive stdout/stderr/close events without a real gws binary.
+vi.mock("node:child_process", () => ({
+  spawn: vi.fn(),
+}));
+
+import { spawn } from "node:child_process";
+import { buildArgs, escapeForCmd, escapeJsonArg, sanitizeUploadPath, executeGws } from "../executor.js";
+
+/** Minimal fake ChildProcess: an EventEmitter with EventEmitter stdout/stderr. */
+function makeFakeProc() {
+  const proc = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter };
+  proc.stdout = new EventEmitter();
+  proc.stderr = new EventEmitter();
+  return proc;
+}
 
 // ── escapeForCmd ────────────────────────────────────────────────────────
 
@@ -175,5 +193,96 @@ describe("buildArgs", () => {
     };
     const args = buildArgs(tool, {});
     expect(args.includes("--json")).toBe(false);
+  });
+});
+
+// ── executeGws (typed-error wiring) ──────────────────────────────────────
+//
+// These drive the actual executeGws() catch block (see ../executor.ts) end
+// to end via a mocked child_process.spawn, rather than just unit-testing
+// the mapper in ../errors.ts — confirming the wiring itself, not only the
+// pure function it calls.
+
+describe("executeGws", () => {
+  const driveTool: ToolDef = {
+    name: "drive_files_get",
+    description: "test",
+    command: ["drive", "files", "get"],
+    params: [],
+  };
+
+  const sheetsTool: ToolDef = {
+    name: "sheets_get",
+    description: "test",
+    command: ["sheets", "spreadsheets", "get"],
+    params: [],
+  };
+
+  it("maps a CLI error with a JSON-embedded status to a typed error message", async () => {
+    const proc = makeFakeProc();
+    vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+
+    const resultPromise = executeGws(sheetsTool, {}, "gws");
+    proc.stderr.emit("data", Buffer.from('{"error":{"code":429,"message":"Quota exceeded"}}'));
+    proc.emit("close", 1);
+
+    const result = await resultPromise;
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Rate limit error (429)");
+    expect(result.error).toContain("Quota exceeded");
+  });
+
+  it("maps a plain-text status token and appends the Drive 404 hint for drive commands", async () => {
+    const proc = makeFakeProc();
+    vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+
+    const resultPromise = executeGws(driveTool, {}, "gws");
+    proc.stderr.emit("data", Buffer.from("googleapi: Error 404: File not found: abc123"));
+    proc.emit("close", 1);
+
+    const result = await resultPromise;
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Not found (404)");
+    expect(result.error).toContain("Hint: If this file is in a shared drive");
+  });
+
+  it("does not append the Drive hint for a 404 on a non-drive command", async () => {
+    const proc = makeFakeProc();
+    vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+
+    const resultPromise = executeGws(sheetsTool, {}, "gws");
+    proc.stderr.emit("data", Buffer.from("googleapi: Error 404: Spreadsheet not found: abc123"));
+    proc.emit("close", 1);
+
+    const result = await resultPromise;
+    expect(result.error).toContain("Not found (404)");
+    expect(result.error).not.toContain("Hint:");
+  });
+
+  it("passes a message with no recognizable status through unchanged (legacy fallback)", async () => {
+    const proc = makeFakeProc();
+    vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+
+    const resultPromise = executeGws(driveTool, {}, "gws");
+    proc.stderr.emit("data", Buffer.from("connect ECONNREFUSED 127.0.0.1:443"));
+    proc.emit("close", 1);
+
+    const result = await resultPromise;
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("connect ECONNREFUSED 127.0.0.1:443");
+  });
+
+  it("returns success with stdout when the process exits 0", async () => {
+    const proc = makeFakeProc();
+    vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+
+    const resultPromise = executeGws(driveTool, {}, "gws");
+    proc.stdout.emit("data", Buffer.from('{"id": "abc123"}'));
+    proc.emit("close", 0);
+
+    const result = await resultPromise;
+    expect(result.success).toBe(true);
+    expect(result.output).toBe('{"id": "abc123"}');
+    expect(result.error).toBeUndefined();
   });
 });
