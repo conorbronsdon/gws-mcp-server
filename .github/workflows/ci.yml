@@ -26,3 +26,17 @@ jobs:
       - run: npm test
       # Keep installs green: block CI on high+ advisories, let moderates through.
       - run: npm audit --audit-level=high
+
+  # Stable aggregation gate: branch protection requires only this one check, so
+  # editing the test matrix (OS/node) never orphans a required check name again.
+  ci-passed:
+    name: ci-passed
+    if: always()
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any test leg did not succeed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        run: |
+          echo "one or more test jobs did not succeed: ${{ join(needs.*.result, ', ') }}"
+          exit 1
