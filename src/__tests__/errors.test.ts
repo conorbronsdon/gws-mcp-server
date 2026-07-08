@@ -84,6 +84,29 @@ describe("extractGwsErrorDetail", () => {
     expect(result.status).toBeUndefined();
     expect(result.detail).toBe(raw);
   });
+
+  it("does not misread a bare count that happens to match a status code as a status", () => {
+    // These are realistic CLI messages where the 3-digit number is a file
+    // count, retry count, or byte count — not an HTTP status — and appears
+    // with no "Error"/"HTTP"/"status"/"code" keyword in front of it.
+    const cases = [
+      "gws: sync failed: 404 files could not be uploaded, aborting",
+      "gws: rate limiter: retried 3 times, 429 background jobs still queued",
+      "gws: batch failed: processed 200 of 500 rows before error",
+      "gws: disk write error: wrote 400 of 12000 bytes before failure",
+    ];
+    for (const raw of cases) {
+      const result = extractGwsErrorDetail(raw);
+      expect(result.status).toBeUndefined();
+      expect(result.detail).toBe(raw);
+    }
+  });
+
+  it("still recognizes a status keyword even mid-sentence, not just at the very start", () => {
+    const raw = "gws: request failed with status 503, retrying";
+    const result = extractGwsErrorDetail(raw);
+    expect(result.status).toBe(503);
+  });
 });
 
 describe("mapGwsErrorToTyped", () => {

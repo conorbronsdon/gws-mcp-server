@@ -136,8 +136,19 @@ export function extractGwsErrorDetail(rawMessage: string): GwsErrorInfo {
     }
   }
 
-  // 2. Plain text containing an HTTP-status-like 3-digit token.
-  const textMatch = rawMessage.match(/\b(400|401|403|404|429|5\d{2})\b/);
+  // 2. Plain text containing an HTTP-status-like 3-digit token. This is
+  // deliberately NOT a naive `\b(400|...)\b` scan — a bare 3-digit number
+  // matching one of these values can legitimately appear in CLI output that
+  // has nothing to do with an HTTP status (a file count, a retry count, a
+  // byte count: "404 files could not be uploaded", "wrote 400 of 12000
+  // bytes"). Requiring the token to either open the message or be
+  // immediately preceded by a recognized status keyword ("Error", "HTTP",
+  // "status", "code") keeps the real-world shapes this CLI actually emits
+  // (`Error 403: ...`, `404 not found: ...`, `googleapi: Error 429: ...`)
+  // while rejecting incidental numbers embedded in unrelated prose.
+  const textMatch = rawMessage.match(
+    /(?:^|\b(?:Error|HTTP|status(?:\s+code)?|code)\s*:?\s*)(400|401|403|404|429|5\d{2})\b/i
+  );
   if (textMatch) {
     return { status: Number(textMatch[1]), detail: rawMessage };
   }
