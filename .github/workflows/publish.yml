@@ -19,7 +19,9 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          # Node 24 ships npm >=11.5.1 with sigstore intact; self-upgrading npm on the
+          # Node 22 runner broke provenance publish ("Cannot find module sigstore").
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - name: Check if package.json version is already published
@@ -50,9 +52,9 @@ jobs:
         if: steps.version.outputs.changed == 'true'
         run: npm test --if-present
 
-      - name: Update npm for trusted publishing
+      - name: Show tool versions
         if: steps.version.outputs.changed == 'true'
-        run: npm install -g npm@latest
+        run: node --version && npm --version
 
       - name: Publish to npm
         if: steps.version.outputs.changed == 'true'
