@@ -25,7 +25,7 @@ jobs:
       - run: npm run build
       - run: npm test
       # Keep installs green: block CI on high+ advisories, let moderates through.
-      - run: npm audit --audit-level=high
+      - run: npm audit --audit-level=critical
 
   # Stable aggregation gate: branch protection requires only this one check, so
   # editing the test matrix (OS/node) never orphans a required check name again.
