@@ -1,0 +1,14 @@
+{
+  // Type-check everything under src/, tests included.
+  //
+  // tsconfig.json excludes src/__tests__ so the tests stay out of build/ and
+  // out of the npm tarball. That exclusion must not cost us type-checking on
+  // them, so `npm run lint` points here instead: same compiler options, tests
+  // back in scope, nothing emitted.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "build"]
+}

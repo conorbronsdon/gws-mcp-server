@@ -11,10 +11,26 @@
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
+import { readFileSync } from "node:fs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createServer } from "../index.js";
+import { createServer, countRegisteredTools, SERVER_VERSION } from "../index.js";
 import { getToolsForServices, ALL_SERVICES } from "../services.js";
+
+/** Drive a real MCP client against an assembled server and return it. */
+async function connect(services: string[]): Promise<Client> {
+  const server = createServer(
+    getToolsForServices(services),
+    services,
+    "gws",
+    // gwsAvailable: nothing is executed here, only metadata is read.
+    false,
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "annotations-test", version: "1.0.0" });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  return client;
+}
 
 type ListedTool = {
   name: string;
@@ -24,16 +40,7 @@ type ListedTool = {
 let tools: ListedTool[];
 
 beforeAll(async () => {
-  const server = createServer(
-    getToolsForServices(ALL_SERVICES),
-    ALL_SERVICES,
-    "gws",
-    // gwsAvailable: nothing is executed here, only the tool list is read.
-    false,
-  );
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "annotations-test", version: "1.0.0" });
-  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  const client = await connect(ALL_SERVICES);
   tools = (await client.listTools()).tools as ListedTool[];
 });
 
@@ -73,6 +80,24 @@ describe("advertised annotations", () => {
     expect(byName("drive_files_download").annotations?.readOnlyHint).toBe(true);
   });
 
+  it("reports the version from package.json, not a hardcoded literal", async () => {
+    // `version` in index.ts was pinned at "0.4.0" while the publish workflow
+    // derived server.json from package.json, so the next bump would have
+    // shipped a stale version to every client. Compare against package.json
+    // read here rather than against SERVER_VERSION, which would only prove the
+    // constant equals itself.
+    const pkg = JSON.parse(
+      readFileSync(new URL("../../package.json", import.meta.url), "utf-8"),
+    ) as { version: string };
+
+    const client = await connect(ALL_SERVICES);
+    const advertised = client.getServerVersion();
+
+    expect(advertised?.name).toBe("gws-mcp-server");
+    expect(advertised?.version).toBe(pkg.version);
+    expect(SERVER_VERSION).toBe(pkg.version);
+  });
+
   it("only irreversible removals are advertised as destructive", () => {
     // tasks_tasks_clear is in this list and is not a *_delete: it permanently
     // removes completed tasks from a list, so it belongs here.
@@ -87,5 +112,38 @@ describe("advertised annotations", () => {
       "tasks_tasks_clear",
       "tasks_tasks_delete",
     ]);
+  });
+});
+
+describe("startup tool count", () => {
+  // The startup log read `tools.length` from the registry, which is taken
+  // before the two hand-registered tools are added — it said 37 while a client
+  // saw 39. `countRegisteredTools` restates createServer's registration guards,
+  // so it is only trustworthy if checked against a real tools/list. Subsets
+  // matter: the custom tools are gated on drive and gmail individually.
+  const cases: string[][] = [
+    ALL_SERVICES,
+    ["drive"],
+    ["gmail"],
+    ["drive", "gmail"],
+    ["sheets"],
+    ["calendar", "docs", "tasks"],
+  ];
+
+  for (const services of cases) {
+    it(`matches what a client lists for --services ${services.join(",")}`, async () => {
+      const client = await connect(services);
+      const listed = (await client.listTools()).tools;
+      expect(countRegisteredTools(getToolsForServices(services), services)).toBe(listed.length);
+    });
+  }
+
+  it("counts the custom tools that the registry does not", () => {
+    // Guards against the fix being "fudge the string": the number has to come
+    // from somewhere other than the registry length.
+    const registry = getToolsForServices(ALL_SERVICES);
+    expect(registry.length).toBe(37);
+    expect(countRegisteredTools(registry, ALL_SERVICES)).toBe(39);
+    expect(countRegisteredTools(registry, ["sheets"])).toBe(registry.length);
   });
 });
