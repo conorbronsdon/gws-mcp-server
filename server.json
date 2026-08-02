@@ -7,24 +7,26 @@
     "url": "https://github.com/conorbronsdon/gws-mcp-server",
     "source": "github"
   },
-  "version": "0.3.0",
+  "version": "0.4.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "gws-mcp-server",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
       },
       "packageArguments": [
         {
+          "type": "named",
           "name": "--services",
           "description": "Comma-separated list of Google services to expose (drive,sheets,calendar,docs,gmail,tasks). Defaults to all.",
           "isRequired": false,
           "default": "drive,sheets,calendar,docs,gmail,tasks"
         },
         {
+          "type": "named",
           "name": "--gws-path",
           "description": "Path to the gws binary if not on PATH.",
           "isRequired": false
