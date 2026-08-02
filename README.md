@@ -98,6 +98,18 @@ npm install && npm run build
 |------|-------------|---------|
 | `--services, -s` | Comma-separated list of services to expose | All services |
 | `--gws-path` | Path to the `gws` binary | `gws` |
+| `--read-only` | Register only the read-only tools | off |
+
+### `--read-only`
+
+`--read-only` registers **17 tools** instead of 39. Every tool that writes to Google is left unregistered, so it never appears in `tools/list` and there is nothing for an agent to call — including `gmail_drafts_create`, which is a write even though it never sends. `drive_files_download` stays, since it reads.
+
+```bash
+gws-mcp-server --read-only
+gws-mcp-server --read-only --services drive,calendar   # combines with -s
+```
+
+This constrains the **agent, not the credential**. The token on disk keeps whatever scopes it was granted, and anything else on the machine can still use it. `gws auth login --readonly` is what narrows the token; the two are complementary. For an MCP server the agent is the threat model, but that is the limit of the claim.
 
 ## Available services & tools
 
