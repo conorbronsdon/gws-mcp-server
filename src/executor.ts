@@ -186,7 +186,16 @@ export async function executeGws(
 ): Promise<ExecResult> {
   const cliArgs = buildArgs(tool, args);
 
-  console.error(`[gws-mcp] Executing: ${gwsBinary} ${cliArgs.join(" ")}`);
+  // Log the subcommand only. cliArgs carries --params and --json, which hold
+  // the full request body: spreadsheet cell values, inserted document text,
+  // grantee email addresses, calendar event details. MCP clients persist
+  // stderr to log files, so anything printed here lands on disk indefinitely.
+  // SECURITY.md promises nothing is logged beyond tool names and errors.
+  if (process.env.GWS_MCP_DEBUG) {
+    console.error(`[gws-mcp] Executing: ${gwsBinary} ${cliArgs.join(" ")}`);
+  } else {
+    console.error(`[gws-mcp] Executing: ${gwsBinary} ${tool.command.join(" ")}`);
+  }
 
   try {
     const { stdout, stderr } = await spawnGwsRaw(gwsBinary, cliArgs);

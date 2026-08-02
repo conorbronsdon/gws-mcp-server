@@ -286,3 +286,68 @@ describe("executeGws", () => {
     expect(result.error).toBeUndefined();
   });
 });
+
+// ── Request bodies must not reach the logs ──────────────────────────────
+// SECURITY.md: "nothing is logged beyond tool names and errors." That was a
+// prose promise with no mechanism; executeGws logged the full command line,
+// including --params and --json. MCP clients persist stderr to disk.
+
+describe("executeGws logging", () => {
+  const sheetsUpdate: ToolDef = {
+    name: "sheets_values_update",
+    description: "test",
+    command: ["sheets", "spreadsheets", "values", "update"],
+    params: [{ name: "spreadsheetId", description: "id", type: "string", required: true }],
+    bodyParams: [{ name: "values", description: "values", type: "string", required: false }],
+  };
+
+  const SECRET_ID = "SHEET_ID_THAT_MUST_NOT_BE_LOGGED";
+  const SECRET_BODY = "555-01-9999";
+
+  async function runAndCaptureLogs(): Promise<string> {
+    const proc = makeFakeProc();
+    vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => {
+      lines.push(a.map(String).join(" "));
+    });
+    try {
+      const p = executeGws(
+        sheetsUpdate,
+        { spreadsheetId: SECRET_ID, values: SECRET_BODY },
+        "gws",
+      );
+      proc.stdout.emit("data", Buffer.from("{}"));
+      proc.emit("close", 0);
+      await p;
+      return lines.join("\n");
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it("logs the subcommand but neither the params nor the request body", async () => {
+    delete process.env.GWS_MCP_DEBUG;
+    const logged = await runAndCaptureLogs();
+
+    // The operation is still identifiable...
+    expect(logged).toContain("sheets spreadsheets values update");
+    // ...but the caller's data is not in it.
+    expect(logged).not.toContain(SECRET_ID);
+    expect(logged).not.toContain(SECRET_BODY);
+    expect(logged).not.toContain("--params");
+    expect(logged).not.toContain("--json");
+  });
+
+  it("logs the full command line when GWS_MCP_DEBUG is set", async () => {
+    // Asserted so the test above cannot pass merely because nothing is logged.
+    process.env.GWS_MCP_DEBUG = "1";
+    try {
+      const logged = await runAndCaptureLogs();
+      expect(logged).toContain(SECRET_ID);
+      expect(logged).toContain("--json");
+    } finally {
+      delete process.env.GWS_MCP_DEBUG;
+    }
+  });
+});
