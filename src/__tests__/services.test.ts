@@ -238,28 +238,58 @@ describe("buildAnnotations mapping", () => {
     ...flags,
   });
 
-  it("readOnly:true -> { readOnlyHint: true } and no destructiveHint", () => {
+  it("readOnly:true -> read hints only, no destructiveHint or idempotentHint", () => {
     const a = buildAnnotations(mk({ readOnly: true }));
-    expect(a).toEqual({ readOnlyHint: true });
+    expect(a).toEqual({ readOnlyHint: true, openWorldHint: true });
     expect(a.destructiveHint).toBeUndefined();
+    // The spec ignores idempotentHint on a read, same rule as destructiveHint.
+    expect(a.idempotentHint).toBeUndefined();
   });
 
-  it("destructive:true -> { readOnlyHint: false, destructiveHint: true }", () => {
+  it("destructive:true -> destructive write, non-idempotent unless flagged", () => {
     const a = buildAnnotations(mk({ destructive: true }));
-    expect(a).toEqual({ readOnlyHint: false, destructiveHint: true });
+    expect(a).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    });
   });
 
-  it("no flags (additive write) -> explicit { readOnlyHint: false, destructiveHint: false }", () => {
+  it("destructive + idempotent -> idempotentHint: true", () => {
+    const a = buildAnnotations(mk({ destructive: true, idempotent: true }));
+    expect(a.idempotentHint).toBe(true);
+    expect(a.destructiveHint).toBe(true);
+  });
+
+  it("no flags (additive write) -> explicit destructiveHint and idempotentHint", () => {
     const a = buildAnnotations(mk({}));
-    expect(a).toEqual({ readOnlyHint: false, destructiveHint: false });
+    expect(a).toEqual({
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    });
     // Not `undefined`: the MCP default for destructiveHint is true, so an
     // omitted hint advertises an additive write as destructive.
     expect(a.destructiveHint).toBe(false);
   });
 
+  it("additive + idempotent -> idempotentHint: true", () => {
+    const a = buildAnnotations(mk({ idempotent: true }));
+    expect(a.idempotentHint).toBe(true);
+    expect(a.destructiveHint).toBe(false);
+  });
+
   it("readOnly wins if both flags are set (defensive)", () => {
     const a = buildAnnotations(mk({ readOnly: true, destructive: true }));
-    expect(a).toEqual({ readOnlyHint: true });
+    expect(a).toEqual({ readOnlyHint: true, openWorldHint: true });
+  });
+
+  it("openWorldHint is true on every branch", () => {
+    for (const flags of [{ readOnly: true }, { destructive: true }, {}, { idempotent: true }]) {
+      expect(buildAnnotations(mk(flags)).openWorldHint).toBe(true);
+    }
   });
 });
 
