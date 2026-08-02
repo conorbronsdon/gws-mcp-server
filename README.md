@@ -30,7 +30,9 @@ The `gws` CLI had a built-in MCP server that was [removed in v0.8.0](https://git
 
 This server exposes **no send tool** — the closest thing is `gmail_drafts_create`, which explicitly does not send. The token `gws auth login` mints is broader than that.
 
-`gws auth login` opens a scope picker with **nine** scopes pre-selected, including `gmail.modify` (Google documents it as "Read, compose, and send emails"), full read-write `drive`, and `cloud-platform`. Pressing Enter accepts all of them. Run non-interactively and you get `DEFAULT_SCOPES`, which is the same list minus the picker.
+`gws auth login` opens a scope picker listing **nine** scopes, **seven** of them pre-selected: full read-write `drive`, `spreadsheets`, `gmail.modify` (Google documents it as "Read, compose, and send emails"), `calendar`, `documents`, `presentations`, and `tasks`. Pressing Enter accepts those seven. Run non-interactively and you get the same seven as `DEFAULT_SCOPES`.
+
+The other two rows are Cloud Pub/Sub and Cloud Platform, and neither is part of the default grant — `gws auth login --help` describes `--full` as "Request all scopes incl. pubsub + cloud-platform."
 
 So the token on disk can send mail and rewrite Drive even though nothing here will. **Deselect what you do not need in the picker**, or:
 
@@ -38,7 +40,7 @@ So the token on disk can send mail and rewrite Drive even though nothing here wi
 gws auth login --readonly    # read-only across services
 ```
 
-One trap worth knowing: `-s gmail` does **not** narrow the picker to Gmail alone. `cloud-platform` is treated as a cross-service scope and is always included, pre-selected — deselect it manually if you use that flag.
+`-s gmail` limits the picker to Gmail, per the flag's own help text ("Comma-separated service names to limit scope picker"). It cannot pull in `cloud-platform` or `pubsub`, because those two are reachable only through `--full`.
 
 **On Linux there is no keyring, and the encryption key is a file next to the data it encrypts.** `gws` enables the `keyring` crate's native backends only for macOS and Windows; on every other platform the dependency is declared with no backend feature, so the store falls through to writing `.encryption_key` into `~/.config/gws/`. That file is not a backup of a key held elsewhere — it is the key, and the credential store's own doc comment says it is never deleted. Setting `GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file` changes nothing there because that is already the only path. On macOS and Windows the key file is removed once the OS keyring holds the key. **If you run this headless on Linux, treat `~/.config/gws/` as a password file: anyone who can read the directory has the credentials.**
 

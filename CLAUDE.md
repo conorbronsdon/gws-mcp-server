@@ -4,7 +4,7 @@ MCP server that exposes Google Workspace CLI (gws) as Model Context Protocol too
 
 ## Architecture
 - `src/index.ts` — MCP server bootstrap, Zod schema generation, tool registration. Also hosts custom tools that don't fit the declarative ToolDef pattern (`drive_files_download`, `gmail_drafts_create`).
-- `src/services.ts` — Declarative tool definitions across 5 services (drive, sheets, calendar, docs, gmail). Each entry maps to a `gws` CLI command + params/body.
+- `src/services.ts` — Declarative tool definitions across 6 services (drive, sheets, calendar, docs, gmail, tasks). Each entry maps to a `gws` CLI command + params/body.
 - `src/executor.ts` — Command builder and runner with security hardening (shell injection prevention, path validation).
 - `src/mime.ts` — RFC 2822 builder + base64url encoding for `gmail_drafts_create`. Includes CRLF-injection guard on header values.
 - `src/__tests__/` — Vitest unit tests, one file per source module.
