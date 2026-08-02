@@ -49,13 +49,16 @@ export const SERVER_VERSION: string = JSON.parse(
 
 // ── CLI argument parsing ───────────────────────────────────────────────
 
-function parseArgs(): { services: string[]; gwsBinary: string } {
+function parseArgs(): { services: string[]; gwsBinary: string; readOnly: boolean } {
   const args = process.argv.slice(2);
   let services = ALL_SERVICES;
   let gwsBinary = "gws";
+  let readOnly = false;
 
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--services" || args[i] === "-s") {
+    if (args[i] === "--read-only") {
+      readOnly = true;
+    } else if (args[i] === "--services" || args[i] === "-s") {
       const val = args[++i];
       if (val) {
         const requested = val.split(",").map((s) => s.trim().toLowerCase());
@@ -76,16 +79,19 @@ OPTIONS:
   --services, -s <list>   Comma-separated services to expose (default: all)
                           Available: ${ALL_SERVICES.join(", ")}
   --gws-path <path>       Path to gws binary (default: "gws")
+  --read-only             Register only the read-only tools. No tool that
+                          writes to Google is exposed at all.
   --help, -h              Show this help
 
 EXAMPLE:
   gws-mcp-server --services drive,sheets,calendar
+  gws-mcp-server --read-only
 `);
       process.exit(0);
     }
   }
 
-  return { services, gwsBinary };
+  return { services, gwsBinary, readOnly };
 }
 
 /**
@@ -155,9 +161,11 @@ export function buildZodSchema(tool: ToolDef): Record<string, z.ZodTypeAny> {
  * not count them. `main()` logged `tools.length` before the server was built
  * and reported 37 while a client listing tools saw 39.
  */
-export const CUSTOM_TOOLS: ReadonlyArray<{ name: string; service: string }> = [
-  { name: "drive_files_download", service: "drive" },
-  { name: "gmail_drafts_create", service: "gmail" },
+export const CUSTOM_TOOLS: ReadonlyArray<{ name: string; service: string; readOnly: boolean }> = [
+  // drive_files_download reads Drive; savePath writes a local file, not Drive.
+  { name: "drive_files_download", service: "drive", readOnly: true },
+  // gmail_drafts_create is a write even though it never sends.
+  { name: "gmail_drafts_create", service: "gmail", readOnly: false },
 ];
 
 /**
@@ -169,8 +177,24 @@ export const CUSTOM_TOOLS: ReadonlyArray<{ name: string; service: string }> = [
  * real `tools/list` for several service subsets. A count derived from the same
  * data it is meant to check would agree with itself and prove nothing.
  */
-export function countRegisteredTools(tools: ToolDef[], services: string[]): number {
-  return tools.length + CUSTOM_TOOLS.filter((t) => services.includes(t.service)).length;
+export function countRegisteredTools(tools: ToolDef[], services: string[], readOnly = false): number {
+  return (
+    selectTools(tools, readOnly).length +
+    CUSTOM_TOOLS.filter((t) => services.includes(t.service) && (!readOnly || t.readOnly)).length
+  );
+}
+
+/**
+ * The registry tools to register, narrowed to reads under `--read-only`.
+ *
+ * Enforced here, at the server boundary, rather than in the README's prose:
+ * under `--read-only` a write tool is never registered, so it is not in
+ * `tools/list` and there is nothing for a client to call. This constrains the
+ * agent, not the credential — the token on disk can still write. For an MCP
+ * server the agent is the threat model, but that is the limit of the claim.
+ */
+export function selectTools(tools: ToolDef[], readOnly: boolean): ToolDef[] {
+  return readOnly ? tools.filter((t) => t.readOnly === true) : tools;
 }
 
 // ── Temp file helper ───────────────────────────────────────────────────
@@ -191,23 +215,23 @@ export function makeTmpFileName(prefix: string): string {
 // ── Main ───────────────────────────────────────────────────────────────
 
 async function main() {
-  const { services, gwsBinary } = parseArgs();
+  const { services, gwsBinary, readOnly } = parseArgs();
 
   const gwsAvailable = validateGwsBinary(gwsBinary);
 
   const tools = getToolsForServices(services);
 
-  if (tools.length === 0) {
+  if (countRegisteredTools(tools, services, readOnly) === 0) {
     console.error("[gws-mcp] FATAL: No tools registered. Check --services flag.");
     process.exit(1);
   }
 
   console.error(
-    `[gws-mcp] Starting with ${countRegisteredTools(tools, services)} tools from services: ${services.join(", ")}`,
+    `[gws-mcp] Starting with ${countRegisteredTools(tools, services, readOnly)} tools from services: ${services.join(", ")}${readOnly ? " (read-only)" : ""}`,
   );
   console.error(`[gws-mcp] Using gws binary: ${gwsBinary}`);
 
-  const server = createServer(tools, services, gwsBinary, gwsAvailable);
+  const server = createServer(tools, services, gwsBinary, gwsAvailable, readOnly);
 
   // Connect via stdio
   const transport = new StdioServerTransport();
@@ -230,11 +254,15 @@ export function createServer(
   services: string[],
   gwsBinary: string,
   gwsAvailable: boolean,
+  readOnly = false,
 ): McpServer {
   const server = new McpServer({
     name: "gws-mcp-server",
     version: SERVER_VERSION,
   });
+
+  // Under --read-only nothing that writes is registered at all.
+  tools = selectTools(tools, readOnly);
 
   // Register each tool, attaching MCP annotations derived from the ToolDef's
   // declarative readOnly/destructive flags so clients can reason about side
@@ -416,7 +444,9 @@ export function createServer(
   // Creates a Gmail draft. The standard ToolDef pattern can't express the
   // Draft body (a base64url-encoded RFC 2822 message wrapped in
   // {message: {raw, threadId}}), so this is registered separately.
-  if (services.includes("gmail")) {
+  // Skipped under --read-only: creating a draft is a write, even though it
+  // never sends. drive_files_download below has no such guard — it reads.
+  if (services.includes("gmail") && !readOnly) {
     server.registerTool(
       "gmail_drafts_create",
       {

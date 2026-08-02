@@ -18,13 +18,14 @@ import { createServer, countRegisteredTools, SERVER_VERSION } from "../index.js"
 import { getToolsForServices, ALL_SERVICES } from "../services.js";
 
 /** Drive a real MCP client against an assembled server and return it. */
-async function connect(services: string[]): Promise<Client> {
+async function connect(services: string[], readOnly = false): Promise<Client> {
   const server = createServer(
     getToolsForServices(services),
     services,
     "gws",
     // gwsAvailable: nothing is executed here, only metadata is read.
     false,
+    readOnly,
   );
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "annotations-test", version: "1.0.0" });
@@ -145,5 +146,65 @@ describe("startup tool count", () => {
     expect(registry.length).toBe(37);
     expect(countRegisteredTools(registry, ALL_SERVICES)).toBe(39);
     expect(countRegisteredTools(registry, ["sheets"])).toBe(registry.length);
+  });
+});
+
+describe("--read-only", () => {
+  // The flag's whole value is that it is enforced at the server boundary
+  // instead of in prose, so every assertion here goes through a real
+  // tools/list. A unit test over selectTools would miss gmail_drafts_create,
+  // which is registered by hand — the same blind spot that let it ship
+  // advertising itself as destructive.
+  let roTools: ListedTool[];
+
+  beforeAll(async () => {
+    const client = await connect(ALL_SERVICES, true);
+    roTools = (await client.listTools()).tools as ListedTool[];
+  });
+
+  it("exposes exactly the 17 read-only tools", () => {
+    expect(roTools.length).toBe(17);
+    expect(countRegisteredTools(getToolsForServices(ALL_SERVICES), ALL_SERVICES, true)).toBe(17);
+  });
+
+  it("lists no tool that advertises itself as a write", () => {
+    const writes = roTools.filter((t) => t.annotations?.readOnlyHint !== true).map((t) => t.name);
+    expect(writes).toEqual([]);
+  });
+
+  it("drops every write the default server exposes", () => {
+    const dropped = tools
+      .filter((t) => t.annotations?.readOnlyHint !== true)
+      .map((t) => t.name);
+    // 39 default - 17 read-only = 22 writes, all gone.
+    expect(dropped.length).toBe(22);
+    for (const name of dropped) {
+      expect(roTools.find((t) => t.name === name)).toBeUndefined();
+    }
+  });
+
+  it("drops the hand-registered write and keeps the hand-registered read", () => {
+    // gmail_drafts_create bypasses the registry filter entirely.
+    expect(roTools.find((t) => t.name === "gmail_drafts_create")).toBeUndefined();
+    expect(roTools.find((t) => t.name === "drive_files_download")).toBeDefined();
+  });
+
+  it("keeps no destructive tool", () => {
+    expect(roTools.filter((t) => t.annotations?.destructiveHint === true)).toEqual([]);
+  });
+
+  it("is additive — the default server is unchanged", () => {
+    expect(tools.length).toBe(39);
+    expect(tools.find((t) => t.name === "gmail_drafts_create")).toBeDefined();
+    expect(tools.find((t) => t.name === "drive_files_delete")).toBeDefined();
+  });
+
+  it("narrows per service, and the count still matches a real tools/list", async () => {
+    for (const services of [["drive"], ["gmail"], ["sheets"], ["calendar", "tasks"]]) {
+      const client = await connect(services, true);
+      const listed = (await client.listTools()).tools;
+      expect(countRegisteredTools(getToolsForServices(services), services, true)).toBe(listed.length);
+      expect(listed.every((t) => (t.annotations as ListedTool["annotations"])?.readOnlyHint === true)).toBe(true);
+    }
   });
 });
