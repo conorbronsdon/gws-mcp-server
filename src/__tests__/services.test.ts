@@ -249,10 +249,12 @@ describe("buildAnnotations mapping", () => {
     expect(a).toEqual({ readOnlyHint: false, destructiveHint: true });
   });
 
-  it("no flags (additive write) -> { readOnlyHint: false } and no destructiveHint", () => {
+  it("no flags (additive write) -> explicit { readOnlyHint: false, destructiveHint: false }", () => {
     const a = buildAnnotations(mk({}));
-    expect(a).toEqual({ readOnlyHint: false });
-    expect(a.destructiveHint).toBeUndefined();
+    expect(a).toEqual({ readOnlyHint: false, destructiveHint: false });
+    // Not `undefined`: the MCP default for destructiveHint is true, so an
+    // omitted hint advertises an additive write as destructive.
+    expect(a.destructiveHint).toBe(false);
   });
 
   it("readOnly wins if both flags are set (defensive)", () => {
@@ -274,6 +276,7 @@ describe("tool annotation classifications", () => {
       const a = buildAnnotations(tool);
       expect(a.readOnlyHint, `${tool.name} should be readOnlyHint:true`).toBe(true);
       expect(a.destructiveHint, `${tool.name} should not be destructive`).toBeUndefined();
+      // destructiveHint is ignored by the spec when readOnlyHint is true.
     }
   });
 
@@ -318,7 +321,7 @@ describe("tool annotation classifications", () => {
     }
   });
 
-  it("additive writes are readOnlyHint:false with no destructiveHint", () => {
+  it("additive writes are readOnlyHint:false with an explicit destructiveHint:false", () => {
     const expectAdditive = [
       "drive_files_create", "drive_files_copy", "drive_files_update", "drive_permissions_create",
       "sheets_values_update", "sheets_values_append",
@@ -331,17 +334,17 @@ describe("tool annotation classifications", () => {
       const tool = byName.get(name)!;
       const a = buildAnnotations(tool);
       expect(a.readOnlyHint, name).toBe(false);
-      expect(a.destructiveHint, name).toBeUndefined();
+      expect(a.destructiveHint, name).toBe(false);
     }
   });
 
   it("gmail_threads_modify is a non-destructive write (TRASH is reversible)", () => {
     // Judgment call: this tool can apply the TRASH label, but label changes
-    // are reversible, so it stays readOnlyHint:false without destructiveHint.
+    // are reversible, so it stays readOnlyHint:false with destructiveHint:false.
     const tool = byName.get("gmail_threads_modify")!;
     const a = buildAnnotations(tool);
     expect(a.readOnlyHint).toBe(false);
-    expect(a.destructiveHint).toBeUndefined();
+    expect(a.destructiveHint).toBe(false);
   });
 
   it("completeness: every registry tool carries exactly one classification", () => {
@@ -357,11 +360,25 @@ describe("tool annotation classifications", () => {
     }
   });
 
+  it("no write tool leaves destructiveHint to the spec default of true", () => {
+    // The regression this pins: an omitted destructiveHint on a write is not
+    // neutral. The MCP schema defaults it to true, so the client shows a
+    // delete-grade prompt for tools that only create or update.
+    const writes = allTools.filter((t) => buildAnnotations(t).readOnlyHint === false);
+    expect(writes.length).toBeGreaterThan(0);
+    for (const tool of writes) {
+      expect(
+        typeof buildAnnotations(tool).destructiveHint,
+        `${tool.name} is a write and must state destructiveHint explicitly`,
+      ).toBe("boolean");
+    }
+  });
+
   it("classification counts match the intended split (16 read / 5 destructive / 16 additive)", () => {
     const read = allTools.filter((t) => buildAnnotations(t).readOnlyHint === true).length;
     const destructive = allTools.filter((t) => buildAnnotations(t).destructiveHint === true).length;
     const additive = allTools.filter(
-      (t) => buildAnnotations(t).readOnlyHint === false && !buildAnnotations(t).destructiveHint,
+      (t) => buildAnnotations(t).readOnlyHint === false && buildAnnotations(t).destructiveHint === false,
     ).length;
     expect(read).toBe(16);
     expect(destructive).toBe(5);

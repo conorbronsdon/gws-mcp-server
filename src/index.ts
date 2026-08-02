@@ -161,6 +161,30 @@ async function main() {
   console.error(`[gws-mcp] Starting with ${tools.length} tools from services: ${services.join(", ")}`);
   console.error(`[gws-mcp] Using gws binary: ${gwsBinary}`);
 
+  const server = createServer(tools, services, gwsBinary, gwsAvailable);
+
+  // Connect via stdio
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+
+  console.error("[gws-mcp] Server running on stdio");
+}
+
+/**
+ * Build the MCP server and register every tool on it.
+ *
+ * Split out of `main()` so tests can inspect what a client actually sees.
+ * The registry tools and the two hand-written tools are registered by
+ * different code paths, and only an assertion against the assembled server
+ * covers both — a unit test over `buildAnnotations` misses the custom ones,
+ * which is how `gmail_drafts_create` shipped without a `destructiveHint`.
+ */
+export function createServer(
+  tools: ToolDef[],
+  services: string[],
+  gwsBinary: string,
+  gwsAvailable: boolean,
+): McpServer {
   const server = new McpServer({
     name: "gws-mcp-server",
     version: "0.4.0",
@@ -363,7 +387,9 @@ async function main() {
           references: z.string().optional().describe("References header value (space-separated Message-IDs of ancestor messages)."),
         },
         // Additive write: creates a draft (never sends). Reversible, non-destructive.
-        annotations: { readOnlyHint: false },
+        // destructiveHint must be stated: the MCP default is true, and this is
+        // the tool the README leans on for "drafts are never auto-sent".
+        annotations: { readOnlyHint: false, destructiveHint: false },
       },
       async (args) => {
         try {
@@ -404,11 +430,7 @@ async function main() {
     console.error("[gws-mcp] Registered custom tool: gmail_drafts_create");
   }
 
-  // Connect via stdio
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-
-  console.error("[gws-mcp] Server running on stdio");
+  return server;
 }
 
 main().catch((err) => {
