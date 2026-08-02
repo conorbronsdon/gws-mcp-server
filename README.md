@@ -30,9 +30,11 @@ The `gws` CLI had a built-in MCP server that was [removed in v0.8.0](https://git
 
 This server exposes **no send tool** — the closest thing is `gmail_drafts_create`, which explicitly does not send. The token `gws auth login` mints is broader than that.
 
-`gws auth login` opens a scope picker listing **nine** scopes, **seven** of them pre-selected: full read-write `drive`, `spreadsheets`, `gmail.modify` (Google documents it as "Read, compose, and send emails"), `calendar`, `documents`, `presentations`, and `tasks`. Pressing Enter accepts those seven. Run non-interactively and you get the same seven as `DEFAULT_SCOPES`.
+`gws auth login` opens a scope picker listing **nine** scopes. The default grant is **seven**: full read-write `drive`, `spreadsheets`, `gmail.modify` (Google documents it as "Read, compose, and send emails"), `calendar`, `documents`, `presentations`, and `tasks` — the same seven you get running non-interactively as `DEFAULT_SCOPES`.
 
-The other two rows are Cloud Pub/Sub and Cloud Platform, and neither is part of the default grant — `gws auth login --help` describes `--full` as "Request all scopes incl. pubsub + cloud-platform."
+The other two rows are Cloud Pub/Sub and Cloud Platform, and neither is part of the default grant — `gws auth login --help` describes `--full` as "Request all scopes incl. pubsub + cloud-platform."
+
+Which rows start *checked* has not been verified against a live picker — the seven above are the documented default grant, not an observation of the TUI. Read the checkboxes before pressing Enter rather than trusting this paragraph.
 
 So the token on disk can send mail and rewrite Drive even though nothing here will. **Deselect what you do not need in the picker**, or:
 
