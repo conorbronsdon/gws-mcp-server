@@ -30,6 +30,23 @@ import { getToolsForServices, ALL_SERVICES, buildAnnotations, type ToolDef } fro
 import { executeGws, spawnGwsRaw, escapeJsonArg } from "./executor.js";
 import { buildRfc2822, base64url } from "./mime.js";
 
+// ── Package metadata ───────────────────────────────────────────────────
+
+/**
+ * The version advertised to MCP clients, read from package.json at runtime.
+ *
+ * Read rather than imported. `import pkg from "../package.json"` needs
+ * `resolveJsonModule`, and package.json sits outside `rootDir: ./src` — tsc
+ * would widen the output root to include it and emit `build/src/index.js`,
+ * breaking the `bin` path in package.json. Resolving from `import.meta.url`
+ * keeps the emit layout intact and works in both trees: `src/../package.json`
+ * when running from source, `build/../package.json` once installed, since npm
+ * always ships package.json at the tarball root.
+ */
+export const SERVER_VERSION: string = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
+).version;
+
 // ── CLI argument parsing ───────────────────────────────────────────────
 
 function parseArgs(): { services: string[]; gwsBinary: string } {
@@ -129,6 +146,33 @@ export function buildZodSchema(tool: ToolDef): Record<string, z.ZodTypeAny> {
   return shape;
 }
 
+// ── Tool counting ──────────────────────────────────────────────────────
+
+/**
+ * The tools `createServer` registers by hand, and the service that gates each.
+ *
+ * These are not in the `services.ts` registry, so `getToolsForServices()` does
+ * not count them. `main()` logged `tools.length` before the server was built
+ * and reported 37 while a client listing tools saw 39.
+ */
+export const CUSTOM_TOOLS: ReadonlyArray<{ name: string; service: string }> = [
+  { name: "drive_files_download", service: "drive" },
+  { name: "gmail_drafts_create", service: "gmail" },
+];
+
+/**
+ * How many tools a client will actually see: registry tools plus whichever
+ * custom tools have their gating service enabled.
+ *
+ * This still restates the guards inside `createServer` rather than driving
+ * them, so the binding constraint is the e2e test that compares this against a
+ * real `tools/list` for several service subsets. A count derived from the same
+ * data it is meant to check would agree with itself and prove nothing.
+ */
+export function countRegisteredTools(tools: ToolDef[], services: string[]): number {
+  return tools.length + CUSTOM_TOOLS.filter((t) => services.includes(t.service)).length;
+}
+
 // ── Temp file helper ───────────────────────────────────────────────────
 
 /**
@@ -158,7 +202,9 @@ async function main() {
     process.exit(1);
   }
 
-  console.error(`[gws-mcp] Starting with ${tools.length} tools from services: ${services.join(", ")}`);
+  console.error(
+    `[gws-mcp] Starting with ${countRegisteredTools(tools, services)} tools from services: ${services.join(", ")}`,
+  );
   console.error(`[gws-mcp] Using gws binary: ${gwsBinary}`);
 
   const server = createServer(tools, services, gwsBinary, gwsAvailable);
@@ -187,7 +233,7 @@ export function createServer(
 ): McpServer {
   const server = new McpServer({
     name: "gws-mcp-server",
-    version: "0.4.0",
+    version: SERVER_VERSION,
   });
 
   // Register each tool, attaching MCP annotations derived from the ToolDef's

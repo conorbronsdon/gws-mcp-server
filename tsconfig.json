@@ -13,5 +13,8 @@
     "sourceMap": false
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "build"]
+  // Tests are excluded from the *emit* only — they were compiling to
+  // build/__tests__ and shipping in the npm tarball. Type-checking still
+  // covers them via tsconfig.lint.json, which `npm run lint` uses.
+  "exclude": ["node_modules", "build", "src/__tests__"]
 }
