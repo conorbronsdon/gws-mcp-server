@@ -40,7 +40,7 @@ gws auth login --readonly    # read-only across services
 
 One trap worth knowing: `-s gmail` does **not** narrow the picker to Gmail alone. `cloud-platform` is treated as a cross-service scope and is always included, pre-selected — deselect it manually if you use that flag.
 
-**On Linux, the encryption key sits beside the credentials it encrypts.** The `gws` credential store writes `.encryption_key` to `~/.config/gws/` and keeps it in sync with the keyring so credentials survive keyring loss; its own source says the file is never deleted. On macOS and Windows the key file is removed once the OS keyring holds it. If you are running this headless on Linux, treat `~/.config/gws/` as equivalent to a password file.
+**On Linux there is no keyring, and the encryption key is a file next to the data it encrypts.** `gws` enables the `keyring` crate's native backends only for macOS and Windows; on every other platform the dependency is declared with no backend feature, so the store falls through to writing `.encryption_key` into `~/.config/gws/`. That file is not a backup of a key held elsewhere — it is the key, and the credential store's own doc comment says it is never deleted. Setting `GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file` changes nothing there because that is already the only path. On macOS and Windows the key file is removed once the OS keyring holds the key. **If you run this headless on Linux, treat `~/.config/gws/` as a password file: anyone who can read the directory has the credentials.**
 
 ## Quick start
 
