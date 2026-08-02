@@ -35,7 +35,12 @@ async function connect(services: string[], readOnly = false): Promise<Client> {
 
 type ListedTool = {
   name: string;
-  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean };
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
 };
 
 let tools: ListedTool[];
@@ -71,10 +76,11 @@ describe("advertised annotations", () => {
 
   it("gmail_drafts_create is advertised as a non-destructive write", () => {
     // The README's safety argument rests on this tool never sending mail.
-    expect(byName("gmail_drafts_create").annotations).toEqual({
-      readOnlyHint: false,
-      destructiveHint: false,
-    });
+    // Asserts the two hints this test is about; the full four-hint object is
+    // pinned in the idempotentHint/openWorldHint block below.
+    const a = byName("gmail_drafts_create").annotations;
+    expect(a?.readOnlyHint).toBe(false);
+    expect(a?.destructiveHint).toBe(false);
   });
 
   it("drive_files_download is advertised read-only (savePath writes locally, not to Drive)", () => {
@@ -206,5 +212,106 @@ describe("--read-only", () => {
       expect(countRegisteredTools(getToolsForServices(services), services, true)).toBe(listed.length);
       expect(listed.every((t) => (t.annotations as ListedTool["annotations"])?.readOnlyHint === true)).toBe(true);
     }
+  });
+});
+
+describe("idempotentHint / openWorldHint", () => {
+  // Asserted from tools/list, never from buildAnnotations. The builder does not
+  // see drive_files_download or gmail_drafts_create at all — #24 shipped a
+  // wrong hint on the second of those while every builder unit test passed.
+
+  it("every tool advertises openWorldHint", () => {
+    const missing = tools
+      .filter((t) => typeof t.annotations?.openWorldHint !== "boolean")
+      .map((t) => t.name);
+    expect(missing).toEqual([]);
+    // All 39 reach Google Workspace, whose state changes independently of us.
+    expect(tools.filter((t) => t.annotations?.openWorldHint === true).length).toBe(39);
+  });
+
+  it("every write advertises idempotentHint, and no read does", () => {
+    // Only meaningful when readOnlyHint is false; the spec ignores it on reads,
+    // which is the same rule this file already applies to destructiveHint.
+    const writesMissing = tools
+      .filter((t) => t.annotations?.readOnlyHint === false)
+      .filter((t) => typeof t.annotations?.idempotentHint !== "boolean")
+      .map((t) => t.name);
+    expect(writesMissing).toEqual([]);
+
+    const readsCarrying = tools
+      .filter((t) => t.annotations?.readOnlyHint === true)
+      .filter((t) => t.annotations?.idempotentHint !== undefined)
+      .map((t) => t.name);
+    expect(readsCarrying).toEqual([]);
+  });
+
+  it("marks exactly the repeatable writes idempotent", () => {
+    // Values, not shape: a test that only counted booleans would pass with
+    // every one of these flipped. Patches and deletes repeat cleanly; a second
+    // delete errors but adds no further effect.
+    const idempotent = tools
+      .filter((t) => t.annotations?.idempotentHint === true)
+      .map((t) => t.name)
+      .sort();
+    expect(idempotent).toEqual([
+      "calendar_events_delete",
+      "calendar_events_update",
+      "drive_files_delete",
+      "drive_files_update",
+      "gmail_threads_modify",
+      "sheets_values_update",
+      "tasks_tasklists_delete",
+      "tasks_tasklists_update",
+      "tasks_tasks_clear",
+      "tasks_tasks_delete",
+      "tasks_tasks_move",
+      "tasks_tasks_update",
+    ]);
+  });
+
+  it("leaves every creating write non-idempotent", () => {
+    // Each of these produces another entity per call, so a client must not
+    // treat a retry as free. sheets_values_append is the subtle one: it is an
+    // append, not a ranged write like sheets_values_update.
+    const notIdempotent = tools
+      .filter((t) => t.annotations?.idempotentHint === false)
+      .map((t) => t.name)
+      .sort();
+    expect(notIdempotent).toEqual([
+      "calendar_events_insert",
+      "docs_batchUpdate",
+      "docs_create",
+      "drive_files_copy",
+      "drive_files_create",
+      "drive_permissions_create",
+      "gmail_drafts_create",
+      "sheets_values_append",
+      "tasks_tasklists_insert",
+      "tasks_tasks_insert",
+    ]);
+  });
+
+  it("gives the hand-registered tools all the hints the builder would", () => {
+    // The #24 regression in one assertion.
+    expect(byName("gmail_drafts_create").annotations).toEqual({
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    });
+    expect(byName("drive_files_download").annotations).toEqual({
+      readOnlyHint: true,
+      openWorldHint: true,
+    });
+  });
+
+  it("accounts for all 39 tools", () => {
+    const reads = tools.filter((t) => t.annotations?.readOnlyHint === true).length;
+    const idem = tools.filter((t) => t.annotations?.idempotentHint === true).length;
+    const nonIdem = tools.filter((t) => t.annotations?.idempotentHint === false).length;
+    expect(reads).toBe(17);
+    expect(idem + nonIdem).toBe(39 - reads);
+    expect(idem).toBe(12);
+    expect(nonIdem).toBe(10);
   });
 });

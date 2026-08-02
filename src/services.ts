@@ -34,12 +34,23 @@ export interface ToolDef {
    * `{ readOnlyHint: false, destructiveHint: false }`.
    */
   destructive?: boolean;
+  /**
+   * Repeating the call with the same arguments leaves the account in the same
+   * state as calling it once. Maps to MCP `idempotentHint`.
+   *
+   * Patches and deletes qualify; a delete's second call errors but adds no
+   * further effect. Creates and appends do not — each call produces another
+   * entity. Only meaningful on a write, so reads leave it unset.
+   */
+  idempotent?: boolean;
 }
 
-/** MCP tool annotations derived from a ToolDef's read/destructive flags. */
+/** MCP tool annotations derived from a ToolDef's declarative flags. */
 export interface ToolAnnotationHints {
   readOnlyHint: boolean;
   destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint: boolean;
 }
 
 /**
@@ -54,16 +65,36 @@ export interface ToolAnnotationHints {
  * "non-destructive" — it means the opposite, and the client renders a
  * delete-grade consent prompt for a tool that only creates a draft. Only omit
  * it on a `readOnlyHint: true` tool, where the spec says it is ignored.
+ *
+ * `openWorldHint` is true on every tool: they all reach Google Workspace,
+ * whose state changes independently of this server. That matches the schema
+ * default, so stating it changes no client behaviour — it is documentation,
+ * and it stops the hint being read as "unset because nobody considered it".
+ *
+ * `idempotentHint` is the one that carries weight. It defaults to **false**,
+ * so unlike `destructiveHint` an omission is the safe direction: a client that
+ * assumes a retry is unsafe merely asks again. It is emitted only on writes,
+ * matching how `destructiveHint` is omitted on reads where the spec ignores it.
  */
 export function buildAnnotations(tool: ToolDef): ToolAnnotationHints {
   if (tool.readOnly) {
-    return { readOnlyHint: true };
+    return { readOnlyHint: true, openWorldHint: true };
   }
   if (tool.destructive) {
-    return { readOnlyHint: false, destructiveHint: true };
+    return {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: tool.idempotent === true,
+      openWorldHint: true,
+    };
   }
   // Write-but-additive (or reversible) tool.
-  return { readOnlyHint: false, destructiveHint: false };
+  return {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: tool.idempotent === true,
+    openWorldHint: true,
+  };
 }
 
 export interface ParamDef {
@@ -149,6 +180,7 @@ const driveTools: ToolDef[] = [
     ],
     supportsUpload: true,
     defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
+    idempotent: true,
   },
   {
     name: "drive_files_delete",
@@ -159,6 +191,7 @@ const driveTools: ToolDef[] = [
     ],
     defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
     destructive: true,
+    idempotent: true,
   },
   {
     name: "drive_files_export",
@@ -222,6 +255,7 @@ const sheetsTools: ToolDef[] = [
     bodyParams: [
       { name: "values", description: "2D array of values as JSON string (e.g. '[[\"A\",\"B\"],[\"C\",\"D\"]]')", type: "string", required: true },
     ],
+    idempotent: true,
   },
   {
     name: "sheets_values_append",
@@ -295,6 +329,7 @@ const calendarTools: ToolDef[] = [
       { name: "end", description: "End time JSON", type: "string", required: false },
       { name: "description", description: "Event description", type: "string", required: false },
     ],
+    idempotent: true,
   },
   {
     name: "calendar_events_delete",
@@ -305,6 +340,7 @@ const calendarTools: ToolDef[] = [
       { name: "eventId", description: "Event ID to delete", type: "string", required: true },
     ],
     destructive: true,
+    idempotent: true,
   },
 ];
 
@@ -407,6 +443,7 @@ const gmailTools: ToolDef[] = [
     // trashing) are reversible — untrashing restores the thread. It is a write,
     // not a destructive (irreversible) one, so it stays readOnlyHint:false with
     // no destructiveHint. Permanent deletion is not exposed by this tool.
+    idempotent: true,
   },
 ];
 
@@ -451,6 +488,7 @@ const tasksTools: ToolDef[] = [
     bodyParams: [
       { name: "title", description: "New task list title", type: "string", required: false },
     ],
+    idempotent: true,
   },
   {
     name: "tasks_tasklists_delete",
@@ -460,6 +498,7 @@ const tasksTools: ToolDef[] = [
       { name: "tasklist", description: "Task list ID to delete", type: "string", required: true },
     ],
     destructive: true,
+    idempotent: true,
   },
   {
     name: "tasks_tasks_list",
@@ -521,6 +560,7 @@ const tasksTools: ToolDef[] = [
       { name: "status", description: "Task status: needsAction or completed", type: "string", required: false },
       { name: "due", description: "Due date (RFC 3339)", type: "string", required: false },
     ],
+    idempotent: true,
   },
   {
     name: "tasks_tasks_move",
@@ -533,6 +573,7 @@ const tasksTools: ToolDef[] = [
       { name: "previous", description: "New sibling task ID (move immediately after this task)", type: "string", required: false },
       { name: "destinationTasklist", description: "Destination task list ID (omit to move within the source list)", type: "string", required: false },
     ],
+    idempotent: true,
   },
   {
     name: "tasks_tasks_delete",
@@ -543,6 +584,7 @@ const tasksTools: ToolDef[] = [
       { name: "task", description: "Task ID to delete", type: "string", required: true },
     ],
     destructive: true,
+    idempotent: true,
   },
   {
     name: "tasks_tasks_clear",
@@ -555,6 +597,7 @@ const tasksTools: ToolDef[] = [
     // bulk-mutates list visibility with no per-task undo, so we treat it as
     // destructive alongside the deletes (matches the issue's classification).
     destructive: true,
+    idempotent: true,
   },
 ];
 

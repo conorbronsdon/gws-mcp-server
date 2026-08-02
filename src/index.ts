@@ -322,8 +322,10 @@ export function createServer(
           savePath: z.string().optional().describe("For binary files (images, PDFs): save to this local path instead of returning content inline. The file path is returned in the response."),
         },
         // Read-only: fetches content, never mutates Drive. (savePath writes a
-        // local file, not the user's Drive data.)
-        annotations: { readOnlyHint: true },
+        // local file, not the user's Drive data.) openWorldHint because Drive
+        // changes independently of this server. idempotentHint is omitted on
+        // reads, matching buildAnnotations.
+        annotations: { readOnlyHint: true, openWorldHint: true },
       },
       async (args) => {
         const tmpFile = makeTmpFileName("gws-dl");
@@ -465,7 +467,17 @@ export function createServer(
         // Additive write: creates a draft (never sends). Reversible, non-destructive.
         // destructiveHint must be stated: the MCP default is true, and this is
         // the tool the README leans on for "drafts are never auto-sent".
-        annotations: { readOnlyHint: false, destructiveHint: false },
+        // idempotentHint is false because each call creates another draft. This
+        // tool is hand-registered and bypasses buildAnnotations entirely, which
+        // is exactly how it shipped without a destructiveHint in #24 — so the
+        // e2e test asserts all four hints from a real tools/list, not from the
+        // builder.
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
       },
       async (args) => {
         try {
