@@ -30,8 +30,8 @@ export interface ToolDef {
   /**
    * Destructive write: irreversibly removes or overwrites user data (deletes).
    * Maps to MCP annotations `{ readOnlyHint: false, destructiveHint: true }`.
-   * Additive/reversible writes leave this unset (they emit `readOnlyHint: false`
-   * with no destructive hint).
+   * Additive/reversible writes leave this unset and emit an explicit
+   * `{ readOnlyHint: false, destructiveHint: false }`.
    */
   destructive?: boolean;
 }
@@ -46,11 +46,14 @@ export interface ToolAnnotationHints {
  * Map a ToolDef's declarative flags into MCP `annotations`.
  *
  * Every tool gets an explicit `readOnlyHint` (true for reads, false for any
- * write) so clients always know the side-effect class. `destructiveHint: true`
- * is added only for destructive writes (deletes). Additive/reversible writes
- * (creates, updates, label changes) carry `readOnlyHint: false` and no
- * destructive hint — the MCP default destructiveHint is true, so omitting it
- * would wrongly flag them; we leave it off intentionally to mean "non-destructive".
+ * write) so clients always know the side-effect class, and every write gets an
+ * explicit `destructiveHint`.
+ *
+ * The explicit `destructiveHint: false` matters. Per the MCP schema the hint
+ * defaults to **true**, so leaving it off an additive write does not mean
+ * "non-destructive" — it means the opposite, and the client renders a
+ * delete-grade consent prompt for a tool that only creates a draft. Only omit
+ * it on a `readOnlyHint: true` tool, where the spec says it is ignored.
  */
 export function buildAnnotations(tool: ToolDef): ToolAnnotationHints {
   if (tool.readOnly) {
@@ -60,7 +63,7 @@ export function buildAnnotations(tool: ToolDef): ToolAnnotationHints {
     return { readOnlyHint: false, destructiveHint: true };
   }
   // Write-but-additive (or reversible) tool.
-  return { readOnlyHint: false };
+  return { readOnlyHint: false, destructiveHint: false };
 }
 
 export interface ParamDef {
