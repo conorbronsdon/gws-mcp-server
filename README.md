@@ -24,7 +24,23 @@ The `gws` CLI had a built-in MCP server that was [removed in v0.8.0](https://git
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) 18+
-- [`gws` CLI](https://github.com/googleworkspace/cli) installed and authenticated (`npm install -g @googleworkspace/cli && gws auth login`)
+- [`gws` CLI](https://github.com/googleworkspace/cli) installed and authenticated (`npm install -g @googleworkspace/cli && gws auth login`)
+
+### Grant fewer scopes than the default
+
+This server exposes **no send tool** — the closest thing is `gmail_drafts_create`, which explicitly does not send. The token `gws auth login` mints is broader than that.
+
+`gws auth login` opens a scope picker with **nine** scopes pre-selected, including `gmail.modify` (Google documents it as "Read, compose, and send emails"), full read-write `drive`, and `cloud-platform`. Pressing Enter accepts all of them. Run non-interactively and you get `DEFAULT_SCOPES`, which is the same list minus the picker.
+
+So the token on disk can send mail and rewrite Drive even though nothing here will. **Deselect what you do not need in the picker**, or:
+
+```bash
+gws auth login --readonly    # read-only across services
+```
+
+One trap worth knowing: `-s gmail` does **not** narrow the picker to Gmail alone. `cloud-platform` is treated as a cross-service scope and is always included, pre-selected — deselect it manually if you use that flag.
+
+**On Linux, the encryption key sits beside the credentials it encrypts.** The `gws` credential store writes `.encryption_key` to `~/.config/gws/` and keeps it in sync with the keyring so credentials survive keyring loss; its own source says the file is never deleted. On macOS and Windows the key file is removed once the OS keyring holds it. If you are running this headless on Linux, treat `~/.config/gws/` as equivalent to a password file.
 
 ## Quick start
 
