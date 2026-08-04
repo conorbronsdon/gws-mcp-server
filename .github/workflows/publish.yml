@@ -60,9 +60,13 @@ jobs:
         if: steps.version.outputs.changed == 'true'
         run: npm publish --provenance
 
-      # server.json is derived from package.json at publish time so the two can
-      # never drift again — the registry stayed pinned at the June 2026 versions
-      # because server.json was hand-maintained and nobody re-published it.
+      # Overwrites server.json in the runner's checkout so the version the
+      # registry receives below always comes from package.json. The write is
+      # never committed, so the server.json in git can still show a stale
+      # version between releases — what this guarantees is the published
+      # artifact, not the file on main. The registry stayed pinned at the
+      # June 2026 versions because server.json was hand-maintained and nobody
+      # re-published it; deriving it here is what fixes that.
       - name: Sync server.json version from package.json
         run: |
           node -e '
