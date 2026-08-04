@@ -19,31 +19,31 @@ Google Workspace for AI agents: Gmail, Calendar, Drive, Sheets, Docs, and Tasks 
 
 ## Why?
 
-The `gws` CLI had a built-in MCP server that was [removed in v0.8.0](https://github.com/googleworkspace/cli/pull/275) because it exposed 200-400 tools — causing context window bloat in MCP clients. This server takes a curated approach: you choose which Google services to expose, and only a focused set of high-value, narrowly scoped operations are registered as tools. Every tool declares all four MCP annotation hints — `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` — so clients can reason about side effects, know which writes are safe to retry, and surface clearer consent prompts.
+The `gws` CLI had a built-in MCP server that was [removed in v0.8.0](https://github.com/googleworkspace/cli/pull/275) because it exposed 200-400 tools — causing context window bloat in MCP clients. This server takes a curated approach: you choose which Google services to expose, and only a focused set of high-value, narrowly scoped operations are registered as tools. Every tool declares all four MCP annotation hints — `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` — so clients can reason about side effects, know which writes are safe to retry, and surface clearer consent prompts. This is the permissions leg of trust infrastructure for agents: a deliberately narrow tool surface, side effects declared on every tool, and no send tool at all.
 
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) 18+
-- [`gws` CLI](https://github.com/googleworkspace/cli) installed and authenticated (`npm install -g @googleworkspace/cli && gws auth login`)
-
-### Grant fewer scopes than the default
-
-This server exposes **no send tool** — the closest thing is `gmail_drafts_create`, which explicitly does not send. The token `gws auth login` mints is broader than that.
-
+- [`gws` CLI](https://github.com/googleworkspace/cli) installed and authenticated (`npm install -g @googleworkspace/cli && gws auth login`)
+
+### Grant fewer scopes than the default
+
+This server exposes **no send tool** — the closest thing is `gmail_drafts_create`, which explicitly does not send. The token `gws auth login` mints is broader than that.
+
 `gws auth login` opens a scope picker listing **nine** scopes. The default grant is **seven**: full read-write `drive`, `spreadsheets`, `gmail.modify` (Google documents it as "Read, compose, and send emails"), `calendar`, `documents`, `presentations`, and `tasks` — the same seven you get running non-interactively as `DEFAULT_SCOPES`.
 
 The other two rows are Cloud Pub/Sub and Cloud Platform, and neither is part of the default grant — `gws auth login --help` describes `--full` as "Request all scopes incl. pubsub + cloud-platform."
 
-Which rows start *checked* has not been verified against a live picker — the seven above are the documented default grant, not an observation of the TUI. Read the checkboxes before pressing Enter rather than trusting this paragraph.
-
-So the token on disk can send mail and rewrite Drive even though nothing here will. **Deselect what you do not need in the picker**, or:
-
-```bash
-gws auth login --readonly    # read-only across services
-```
-
-`-s gmail` limits the picker to Gmail, per the flag's own help text ("Comma-separated service names to limit scope picker"). It cannot pull in `cloud-platform` or `pubsub`, because those two are reachable only through `--full`.
-
+Which rows start *checked* has not been verified against a live picker — the seven above are the documented default grant, not an observation of the TUI. Read the checkboxes before pressing Enter rather than trusting this paragraph.
+
+So the token on disk can send mail and rewrite Drive even though nothing here will. **Deselect what you do not need in the picker**, or:
+
+```bash
+gws auth login --readonly    # read-only across services
+```
+
+`-s gmail` limits the picker to Gmail, per the flag's own help text ("Comma-separated service names to limit scope picker"). It cannot pull in `cloud-platform` or `pubsub`, because those two are reachable only through `--full`.
+
 **On Linux there is no keyring, and the encryption key is a file next to the data it encrypts.** `gws` enables the `keyring` crate's native backends only for macOS and Windows; on every other platform the dependency is declared with no backend feature, so the store falls through to writing `.encryption_key` into `~/.config/gws/`. That file is not a backup of a key held elsewhere — it is the key, and the credential store's own doc comment says it is never deleted. Setting `GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file` changes nothing there because that is already the only path. On macOS and Windows the key file is removed once the OS keyring holds the key. **If you run this headless on Linux, treat `~/.config/gws/` as a password file: anyone who can read the directory has the credentials.**
 
 ## Quick start
