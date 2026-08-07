@@ -249,10 +249,11 @@ Worth saying plainly: Google's official Gmail MCP server is also draft-only, wit
 |---|---|
 | Google Workspace | this repo |
 | Search Console | [gsc-mcp](https://github.com/conorbronsdon/gsc-mcp) — same curated approach, including derived views like `gsc_striking_distance` |
+| YouTube Analytics | [yt-analytics-mcp](https://github.com/conorbronsdon/yt-analytics-mcp) — owner-side channel, video, and playlist metrics; read-only, nine tools |
 | Google Analytics 4 | [googleanalytics/google-analytics-mcp](https://github.com/googleanalytics/google-analytics-mcp) — Google's own, read-only |
 | BigQuery | [googleapis/mcp-toolbox](https://github.com/googleapis/mcp-toolbox) — Google's own |
 
-These are separate credential families, not one login: Workspace authenticates with `gws auth login`, Search Console with a `webmasters` OAuth credential, GA4 with Application Default Credentials scoped `analytics.readonly`. Nothing here shares a token with anything else.
+These are separate credential families, not one login: Workspace authenticates with `gws auth login`, Search Console with a `webmasters` OAuth credential, YouTube Analytics with a `yt-analytics.readonly` OAuth credential, GA4 with Application Default Credentials scoped `analytics.readonly`. Nothing here shares a token with anything else.
 
 ## About
 
