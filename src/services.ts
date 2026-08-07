@@ -306,6 +306,7 @@ const calendarTools: ToolDef[] = [
     command: ["calendar", "events", "insert"],
     params: [
       { name: "calendarId", description: "Calendar ID", type: "string", required: true },
+      { name: "sendUpdates", description: "Whether to notify attendees: \"all\", \"externalOnly\", or \"none\" (default: none — no invites are sent even if attendees is set)", type: "string", required: false },
     ],
     bodyParams: [
       { name: "summary", description: "Event title", type: "string", required: true },
@@ -313,6 +314,7 @@ const calendarTools: ToolDef[] = [
       { name: "end", description: "End time JSON", type: "string", required: true },
       { name: "description", description: "Event description", type: "string", required: false },
       { name: "location", description: "Event location", type: "string", required: false },
+      { name: "attendees", description: "Attendees (JSON array as string, e.g. '[{\"email\":\"a@x.com\"},{\"email\":\"b@x.com\",\"optional\":true}]')", type: "string", required: false },
     ],
   },
   {
@@ -322,12 +324,14 @@ const calendarTools: ToolDef[] = [
     params: [
       { name: "calendarId", description: "Calendar ID", type: "string", required: true },
       { name: "eventId", description: "Event ID to update", type: "string", required: true },
+      { name: "sendUpdates", description: "Whether to notify attendees: \"all\", \"externalOnly\", or \"none\" (default: none — no invites/updates are sent even if attendees is set)", type: "string", required: false },
     ],
     bodyParams: [
       { name: "summary", description: "Event title", type: "string", required: false },
       { name: "start", description: "Start time JSON", type: "string", required: false },
       { name: "end", description: "End time JSON", type: "string", required: false },
       { name: "description", description: "Event description", type: "string", required: false },
+      { name: "attendees", description: "Attendees (JSON array as string, e.g. '[{\"email\":\"a@x.com\"},{\"email\":\"b@x.com\",\"optional\":true}]')", type: "string", required: false },
     ],
     idempotent: true,
   },

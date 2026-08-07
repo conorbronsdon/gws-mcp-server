@@ -133,8 +133,8 @@ This constrains the **agent, not the credential**. The token on disk keeps whate
 ### `calendar` (5 tools)
 - `calendar_events_list` — List events
 - `calendar_events_get` — Get event details
-- `calendar_events_insert` — Create events
-- `calendar_events_update` — Update events (only supplied fields change)
+- `calendar_events_insert` — Create events, optionally with `attendees`. Set `sendUpdates` to actually notify them — it defaults to `none`, so attendees are silently added with no invite sent unless you ask
+- `calendar_events_update` — Update events (only supplied fields change), same `attendees`/`sendUpdates` support as insert
 - `calendar_events_delete` — Delete events
 
 ### `docs` (3 tools)

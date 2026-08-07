@@ -227,6 +227,79 @@ describe("calendar_events_update (patch semantics)", () => {
   });
 });
 
+// ── Calendar attendees + sendUpdates ─────────────────────────────────────
+// calendar_events_insert/update previously had no way to invite anyone: the
+// request body accepts `attendees` and the real API only emails them when
+// `sendUpdates` is set on the request — neither was exposed, so an event
+// created through this tool never notified its guests.
+
+describe("calendar attendees + sendUpdates", () => {
+  const insertTool = SERVICE_TOOLS["calendar"].find((t) => t.name === "calendar_events_insert")!;
+  const updateTool = SERVICE_TOOLS["calendar"].find((t) => t.name === "calendar_events_update")!;
+
+  it("insert and update both declare an optional 'attendees' bodyParam", () => {
+    for (const tool of [insertTool, updateTool]) {
+      const attendees = tool.bodyParams!.find((p) => p.name === "attendees");
+      expect(attendees, `${tool.name} should declare 'attendees'`).toBeDefined();
+      expect(attendees!.required).toBe(false);
+      expect(attendees!.type).toBe("string");
+    }
+  });
+
+  it("insert and update both declare an optional 'sendUpdates' param (query, not body)", () => {
+    for (const tool of [insertTool, updateTool]) {
+      const sendUpdates = tool.params.find((p) => p.name === "sendUpdates");
+      expect(sendUpdates, `${tool.name} should declare 'sendUpdates'`).toBeDefined();
+      expect(sendUpdates!.required).toBe(false);
+      expect(tool.bodyParams!.find((p) => p.name === "sendUpdates")).toBeUndefined();
+    }
+  });
+
+  it("a JSON-string attendees value is parsed into a real array in the request body", () => {
+    const args = buildArgs(insertTool, {
+      calendarId: "primary",
+      summary: "Standup",
+      start: '{"dateTime":"2026-03-10T10:00:00-07:00"}',
+      end: '{"dateTime":"2026-03-10T10:30:00-07:00"}',
+      attendees: '[{"email":"a@x.com"},{"email":"b@x.com","optional":true}]',
+    });
+    const jsonIdx = args.indexOf("--json");
+    expect(jsonIdx).toBeGreaterThan(-1);
+    const body = JSON.parse(args[jsonIdx + 1]);
+    // Not a string — buildArgs must have parsed it into a real array, since
+    // the Calendar API rejects a stringified attendees field.
+    expect(body.attendees).toEqual([
+      { email: "a@x.com" },
+      { email: "b@x.com", optional: true },
+    ]);
+  });
+
+  it("sendUpdates lands in --params, never in the --json body", () => {
+    const args = buildArgs(updateTool, {
+      calendarId: "primary",
+      eventId: "evt123",
+      attendees: '[{"email":"a@x.com"}]',
+      sendUpdates: "all",
+    });
+    const paramsIdx = args.indexOf("--params");
+    const jsonIdx = args.indexOf("--json");
+    expect(JSON.parse(args[paramsIdx + 1]).sendUpdates).toBe("all");
+    expect(JSON.parse(args[jsonIdx + 1]).sendUpdates).toBeUndefined();
+  });
+
+  it("omitting attendees/sendUpdates keeps existing insert/update calls unchanged", () => {
+    // Regression guard: a caller that never passes the new fields must see
+    // the exact same body as before this change.
+    const args = buildArgs(updateTool, {
+      calendarId: "primary",
+      eventId: "evt123",
+      summary: "New title",
+    });
+    const jsonIdx = args.indexOf("--json");
+    expect(args[jsonIdx + 1]).toBe(escapeJsonArg(JSON.stringify({ summary: "New title" })));
+  });
+});
+
 // ── Tool annotations (issue #5) ──────────────────────────────────────────
 
 describe("buildAnnotations mapping", () => {
