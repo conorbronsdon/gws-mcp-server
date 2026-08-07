@@ -255,7 +255,6 @@ describe("idempotentHint / openWorldHint", () => {
       .sort();
     expect(idempotent).toEqual([
       "calendar_events_delete",
-      "calendar_events_update",
       "drive_files_delete",
       "drive_files_update",
       "gmail_threads_modify",
@@ -279,6 +278,9 @@ describe("idempotentHint / openWorldHint", () => {
       .sort();
     expect(notIdempotent).toEqual([
       "calendar_events_insert",
+      // Update joined this list when sendUpdates landed: a retry with
+      // "all"/"externalOnly" re-emails every attendee, so repeats are not free.
+      "calendar_events_update",
       "docs_batchUpdate",
       "docs_create",
       "drive_files_copy",
@@ -311,7 +313,7 @@ describe("idempotentHint / openWorldHint", () => {
     const nonIdem = tools.filter((t) => t.annotations?.idempotentHint === false).length;
     expect(reads).toBe(17);
     expect(idem + nonIdem).toBe(39 - reads);
-    expect(idem).toBe(12);
-    expect(nonIdem).toBe(10);
+    expect(idem).toBe(11);
+    expect(nonIdem).toBe(11);
   });
 });

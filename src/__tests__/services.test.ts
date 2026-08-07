@@ -265,13 +265,19 @@ describe("calendar attendees + sendUpdates", () => {
     });
     const jsonIdx = args.indexOf("--json");
     expect(jsonIdx).toBeGreaterThan(-1);
-    const body = JSON.parse(args[jsonIdx + 1]);
-    // Not a string — buildArgs must have parsed it into a real array, since
-    // the Calendar API rejects a stringified attendees field.
-    expect(body.attendees).toEqual([
-      { email: "a@x.com" },
-      { email: "b@x.com", optional: true },
-    ]);
+    // Cross-platform, same convention as the --json assertions above: compare
+    // the escaped string. On Windows escapeJsonArg cmd-quotes the value, so
+    // JSON.parse would return a string and property asserts degrade silently.
+    expect(args[jsonIdx + 1]).toBe(
+      escapeJsonArg(
+        JSON.stringify({
+          summary: "Standup",
+          start: { dateTime: "2026-03-10T10:00:00-07:00" },
+          end: { dateTime: "2026-03-10T10:30:00-07:00" },
+          attendees: [{ email: "a@x.com" }, { email: "b@x.com", optional: true }],
+        })
+      )
+    );
   });
 
   it("sendUpdates lands in --params, never in the --json body", () => {
@@ -283,8 +289,10 @@ describe("calendar attendees + sendUpdates", () => {
     });
     const paramsIdx = args.indexOf("--params");
     const jsonIdx = args.indexOf("--json");
-    expect(JSON.parse(args[paramsIdx + 1]).sendUpdates).toBe("all");
-    expect(JSON.parse(args[jsonIdx + 1]).sendUpdates).toBeUndefined();
+    expect(args[paramsIdx + 1]).toBe(
+      escapeJsonArg(JSON.stringify({ calendarId: "primary", eventId: "evt123", sendUpdates: "all" }))
+    );
+    expect(args[jsonIdx + 1]).toBe(escapeJsonArg(JSON.stringify({ attendees: [{ email: "a@x.com" }] })));
   });
 
   it("omitting attendees/sendUpdates keeps existing insert/update calls unchanged", () => {

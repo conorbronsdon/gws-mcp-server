@@ -19,7 +19,7 @@ Google Workspace for AI agents: Gmail, Calendar, Drive, Sheets, Docs, and Tasks 
 
 ## Why?
 
-The `gws` CLI had a built-in MCP server that was [removed in v0.8.0](https://github.com/googleworkspace/cli/pull/275) because it exposed 200-400 tools — causing context window bloat in MCP clients. This server takes a curated approach: you choose which Google services to expose, and only a focused set of high-value, narrowly scoped operations are registered as tools. Every tool declares all four MCP annotation hints — `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` — so clients can reason about side effects, know which writes are safe to retry, and surface clearer consent prompts. This is the permissions leg of trust infrastructure for agents: a deliberately narrow tool surface, side effects declared on every tool, and no send tool at all.
+The `gws` CLI had a built-in MCP server that was [removed in v0.8.0](https://github.com/googleworkspace/cli/pull/275) because it exposed 200-400 tools — causing context window bloat in MCP clients. This server takes a curated approach: you choose which Google services to expose, and only a focused set of high-value, narrowly scoped operations are registered as tools. Every tool declares all four MCP annotation hints — `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` — so clients can reason about side effects, know which writes are safe to retry, and surface clearer consent prompts. This is the permissions leg of trust infrastructure for agents: a deliberately narrow tool surface, side effects declared on every tool, and no freestanding send tool — the only outbound email an agent can trigger is calendar invite/update notifications, opt-in via `sendUpdates` and off by default.
 
 ## Prerequisites
 
@@ -28,7 +28,7 @@ The `gws` CLI had a built-in MCP server that was [removed in v0.8.0](https://git
 
 ### Grant fewer scopes than the default
 
-This server exposes **no send tool** — the closest thing is `gmail_drafts_create`, which explicitly does not send. The token `gws auth login` mints is broader than that.
+This server exposes **no freestanding send tool** — `gmail_drafts_create` explicitly does not send, and the only outbound email an agent can trigger is calendar invite/update notifications via `sendUpdates`, which is enum-validated and defaults to `none`. The token `gws auth login` mints is broader than that.
 
 `gws auth login` opens a scope picker listing **nine** scopes. The default grant is **seven**: full read-write `drive`, `spreadsheets`, `gmail.modify` (Google documents it as "Read, compose, and send emails"), `calendar`, `documents`, `presentations`, and `tasks` — the same seven you get running non-interactively as `DEFAULT_SCOPES`.
 
@@ -133,8 +133,8 @@ This constrains the **agent, not the credential**. The token on disk keeps whate
 ### `calendar` (5 tools)
 - `calendar_events_list` — List events
 - `calendar_events_get` — Get event details
-- `calendar_events_insert` — Create events, optionally with `attendees`. Set `sendUpdates` to actually notify them — it defaults to `none`, so attendees are silently added with no invite sent unless you ask
-- `calendar_events_update` — Update events (only supplied fields change), same `attendees`/`sendUpdates` support as insert
+- `calendar_events_insert` — Create events, optionally with `attendees`. `sendUpdates` controls invitation email (default `none` — no email, though the event may still appear on attendees' calendars depending on their settings)
+- `calendar_events_update` — Update events (only supplied fields change — except `attendees`, which replaces the whole list; omitted attendees are uninvited). Same `sendUpdates` support as insert
 - `calendar_events_delete` — Delete events
 
 ### `docs` (3 tools)

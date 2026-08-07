@@ -25,6 +25,26 @@ describe("buildZodSchema", () => {
     expect(bad.success).toBe(false);
   });
 
+  it("maps enum-constrained string params to z.enum — out-of-set values never reach the wire", () => {
+    const tool: ToolDef = {
+      name: "test",
+      description: "test",
+      command: ["test"],
+      params: [
+        { name: "sendUpdates", description: "who gets email", type: "string", required: false, enum: ["all", "externalOnly", "none"] },
+      ],
+    };
+    const schema = buildZodSchema(tool);
+    for (const ok of ["all", "externalOnly", "none"]) {
+      expect(schema.sendUpdates.safeParse(ok).success).toBe(true);
+    }
+    // Must-fail leg: values outside the set are rejected at the boundary.
+    expect(schema.sendUpdates.safeParse("EVERYONE_LOL").success).toBe(false);
+    expect(schema.sendUpdates.safeParse("al").success).toBe(false);
+    // Optional still holds: omitting the param entirely stays valid.
+    expect(schema.sendUpdates.safeParse(undefined).success).toBe(true);
+  });
+
   it("maps number params to z.number()", () => {
     const tool: ToolDef = {
       name: "test",
