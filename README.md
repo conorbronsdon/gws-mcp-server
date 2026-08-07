@@ -231,6 +231,29 @@ npm test        # vitest, mocks the executor layer — no real gws calls
 
 Issues and pull requests are welcome. The most useful contributions are new tool definitions in `src/services.ts` for high-value `gws` operations (see "Adding new tools" above). Keep the curated contract: a focused set of narrowly scoped tools, not a 1:1 mirror of every Google API surface. See [SECURITY.md](./SECURITY.md) for how to report vulnerabilities.
 
+## Other options
+
+This server is deliberately narrow: a curated tool surface, side effects declared on every tool, no freestanding send tool. That is the right trade for some workflows and the wrong one for others. The real alternatives:
+
+| You want | Use |
+|---|---|
+| Every Workspace API, self-hosted, with tiers and multi-user OAuth | [taylorwilsdon/google_workspace_mcp](https://github.com/taylorwilsdon/google_workspace_mcp) — 120+ tools across 12 services, MIT, `--tool-tier core\|extended\|complete` |
+| Google's own servers, hosted by Google | [Google Workspace remote MCP servers](https://developers.google.com/workspace/guides/configure-mcp-servers) — 8 endpoints, 42 tools. Developer Preview: requires an application, a Workspace account (not personal Gmail), and a supported client plan |
+| No MCP at all — CLI plus agent skills | [googleworkspace/cli](https://github.com/googleworkspace/cli) — 100+ Agent Skills on the same `gws auth login` this server uses |
+
+Worth saying plainly: Google's official Gmail MCP server is also draft-only, with no send tool — the curated-surface argument is no longer contrarian. What this server still does that those don't: Google Tasks (Google's official lineup has no Tasks server), all four MCP annotation hints on every tool, a local stdio server with no preview application or plan gating, and `--read-only` as a single flag.
+
+### The analytics siblings
+
+| Data | Server |
+|---|---|
+| Google Workspace | this repo |
+| Search Console | [gsc-mcp](https://github.com/conorbronsdon/gsc-mcp) — same curated approach, including derived views like `gsc_striking_distance` |
+| Google Analytics 4 | [googleanalytics/google-analytics-mcp](https://github.com/googleanalytics/google-analytics-mcp) — Google's own, read-only |
+| BigQuery | [googleapis/mcp-toolbox](https://github.com/googleapis/mcp-toolbox) — Google's own |
+
+These are separate credential families, not one login: Workspace authenticates with `gws auth login`, Search Console with a `webmasters` OAuth credential, GA4 with Application Default Credentials scoped `analytics.readonly`. Nothing here shares a token with anything else.
+
 ## About
 
 Built and maintained by [Conor Bronsdon](https://github.com/conorbronsdon). I host the [Chain of Thought](https://chainofthought.show/?utm_source=github&utm_medium=referral&utm_campaign=repo-readme&utm_content=gws-mcp-server) podcast, which covers AI infrastructure, developer tools, and how practitioners actually use this stuff. I built this to give the agent workflows that run the show safe, curated access to Gmail, Calendar, Drive, Sheets, Docs, and Tasks.
