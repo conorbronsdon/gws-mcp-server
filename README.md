@@ -111,6 +111,24 @@ gws-mcp-server --read-only --services drive,calendar   # combines with -s
 
 This constrains the **agent, not the credential**. The token on disk keeps whatever scopes it was granted, and anything else on the machine can still use it. `gws auth login --readonly` is what narrows the token; the two are complementary. For an MCP server the agent is the threat model, but that is the limit of the claim.
 
+### Trimming context cost
+
+Every registered tool rides along in each conversation: the full registry is roughly 27 KB of `tools/list` payload (about 6.7K tokens) that your MCP client loads before anything else happens. The two flags above compose, and dropping whole services you don't use is the cheapest context win there is:
+
+```bash
+gws-mcp-server --services calendar                       # calendar assistant: 5 tools
+gws-mcp-server --services drive,docs                     # document work, nothing else
+gws-mcp-server --read-only --services drive,docs,sheets  # research setup: reads only
+```
+
+In `.mcp.json` or `claude_desktop_config.json`, the same trimming is just editing the `args` array:
+
+```json
+"args": ["gws-mcp-server", "--services", "drive,calendar"]
+```
+
+A service's tool count (headers below) tracks its context cost: dropping `tasks` (12 tools) saves the most, `docs` (3 tools) the least. There is no per-tool exclude flag today — if service granularity is too coarse for your setup, [open an issue](https://github.com/conorbronsdon/gws-mcp-server/issues) describing the split you need.
+
 ## Available services & tools
 
 ### `drive` (9 tools)
@@ -219,6 +237,29 @@ npm test        # vitest, mocks the executor layer — no real gws calls
 ## Contributing
 
 Issues and pull requests are welcome. The most useful contributions are new tool definitions in `src/services.ts` for high-value `gws` operations (see "Adding new tools" above). Keep the curated contract: a focused set of narrowly scoped tools, not a 1:1 mirror of every Google API surface. See [SECURITY.md](./SECURITY.md) for how to report vulnerabilities.
+
+## Other options
+
+This server is deliberately narrow: a curated tool surface, side effects declared on every tool, no freestanding send tool. That is the right trade for some workflows and the wrong one for others. The real alternatives:
+
+| You want | Use |
+|---|---|
+| Every Workspace API, self-hosted, with tiers and multi-user OAuth | [taylorwilsdon/google_workspace_mcp](https://github.com/taylorwilsdon/google_workspace_mcp) — 120+ tools across 12 services, MIT, `--tool-tier core\|extended\|complete` |
+| Google's own servers, hosted by Google | [Google Workspace remote MCP servers](https://developers.google.com/workspace/guides/configure-mcp-servers) — 8 endpoints, 42 tools. Developer Preview: requires an application, a Workspace account (not personal Gmail), and a supported client plan |
+| No MCP at all — CLI plus agent skills | [googleworkspace/cli](https://github.com/googleworkspace/cli) — 100+ Agent Skills on the same `gws auth login` this server uses |
+
+Worth saying plainly: Google's official Gmail MCP server is also draft-only, with no send tool — the curated-surface argument is no longer contrarian. What this server still does that those don't: Google Tasks (Google's official lineup has no Tasks server), all four MCP annotation hints on every tool, a local stdio server with no preview application or plan gating, and `--read-only` as a single flag.
+
+### The analytics siblings
+
+| Data | Server |
+|---|---|
+| Google Workspace | this repo |
+| Search Console | [gsc-mcp](https://github.com/conorbronsdon/gsc-mcp) — same curated approach, including derived views like `gsc_striking_distance` |
+| Google Analytics 4 | [googleanalytics/google-analytics-mcp](https://github.com/googleanalytics/google-analytics-mcp) — Google's own, read-only |
+| BigQuery | [googleapis/mcp-toolbox](https://github.com/googleapis/mcp-toolbox) — Google's own |
+
+These are separate credential families, not one login: Workspace authenticates with `gws auth login`, Search Console with a `webmasters` OAuth credential, GA4 with Application Default Credentials scoped `analytics.readonly`. Nothing here shares a token with anything else.
 
 ## About
 
