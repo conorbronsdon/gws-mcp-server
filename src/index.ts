@@ -7,14 +7,14 @@
  * wrapping the gws CLI (https://github.com/googleworkspace/cli).
  *
  * Usage:
- *   gws-mcp-server [--services drive,sheets,calendar,docs,gmail,tasks] [--gws-path /path/to/gws]
+ *   gws-mcp-server [--services drive,sheets,calendar,docs,slides,gmail,tasks] [--gws-path /path/to/gws]
  *
  * In .mcp.json:
  *   {
  *     "mcpServers": {
  *       "google-workspace": {
  *         "command": "node",
- *         "args": ["path/to/gws-mcp-server/build/index.js", "--services", "drive,sheets,calendar,docs,gmail,tasks"]
+ *         "args": ["path/to/gws-mcp-server/build/index.js", "--services", "drive,sheets,calendar,docs,slides,gmail,tasks"]
  *       }
  *     }
  *   }
