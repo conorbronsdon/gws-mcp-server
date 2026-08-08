@@ -62,12 +62,13 @@ describe("tool definitions integrity", () => {
     expect(SERVICE_TOOLS["sheets"].length).toBe(4);
     expect(SERVICE_TOOLS["calendar"].length).toBe(5);
     expect(SERVICE_TOOLS["docs"].length).toBe(3);
+    expect(SERVICE_TOOLS["slides"].length).toBe(5);
     expect(SERVICE_TOOLS["gmail"].length).toBe(5);
     expect(SERVICE_TOOLS["tasks"].length).toBe(12);
   });
 
-  it("total tool count is 37", () => {
-    expect(allTools.length).toBe(37);
+  it("total tool count is 42", () => {
+    expect(allTools.length).toBe(42);
   });
 
   it("all params have required fields", () => {
@@ -422,6 +423,7 @@ describe("tool annotation classifications", () => {
       "sheets_get", "sheets_values_get",
       "calendar_events_list", "calendar_events_get",
       "docs_get",
+      "slides_get", "slides_pages_get", "slides_pages_getThumbnail",
       "gmail_messages_list", "gmail_messages_get", "gmail_threads_list", "gmail_threads_get",
       "tasks_tasklists_list", "tasks_tasklists_get", "tasks_tasks_list", "tasks_tasks_get",
     ];
@@ -438,6 +440,7 @@ describe("tool annotation classifications", () => {
       "sheets_values_update", "sheets_values_append",
       "calendar_events_insert", "calendar_events_update",
       "docs_create", "docs_batchUpdate",
+      "slides_create", "slides_batchUpdate",
       "tasks_tasklists_insert", "tasks_tasklists_update",
       "tasks_tasks_insert", "tasks_tasks_update", "tasks_tasks_move",
     ];
@@ -485,15 +488,66 @@ describe("tool annotation classifications", () => {
     }
   });
 
-  it("classification counts match the intended split (16 read / 5 destructive / 16 additive)", () => {
+  it("classification counts match the intended split (19 read / 5 destructive / 18 additive)", () => {
     const read = allTools.filter((t) => buildAnnotations(t).readOnlyHint === true).length;
     const destructive = allTools.filter((t) => buildAnnotations(t).destructiveHint === true).length;
     const additive = allTools.filter(
       (t) => buildAnnotations(t).readOnlyHint === false && buildAnnotations(t).destructiveHint === false,
     ).length;
-    expect(read).toBe(16);
+    expect(read).toBe(19);
     expect(destructive).toBe(5);
-    expect(additive).toBe(16);
+    expect(additive).toBe(18);
     expect(read + destructive + additive).toBe(allTools.length);
+  });
+});
+
+// ── Slides service shape ─────────────────────────────────────────────────
+
+describe("slides service shape", () => {
+  const slidesTools = SERVICE_TOOLS["slides"];
+
+  it("all tools route to the 'slides' gws service", () => {
+    for (const tool of slidesTools) {
+      expect(tool.command[0]).toBe("slides");
+    }
+  });
+
+  it("exposes both presentations and pages resources", () => {
+    const resources = new Set(slidesTools.map((t) => t.command[1]));
+    expect(resources.has("presentations")).toBe(true);
+    // pages is the THIRD command segment, so assert it where it actually lives —
+    // the Set above can never contain "pages".
+    const pagesTools = slidesTools.filter((t) => t.command[2] === "pages");
+    expect(pagesTools.map((t) => t.name).sort()).toEqual(["slides_pages_get", "slides_pages_getThumbnail"]);
+  });
+
+  it("requires 'presentationId' on every method except create", () => {
+    for (const tool of slidesTools) {
+      if (tool.name === "slides_create") continue;
+      const presentationIdParam = tool.params.find((p) => p.name === "presentationId");
+      expect(presentationIdParam?.required, `${tool.name} should require 'presentationId'`).toBe(true);
+    }
+  });
+
+  it("requires 'pageObjectId' on both pages methods", () => {
+    const pagesOps = slidesTools.filter((t) => t.command[2] === "pages");
+    expect(pagesOps.length).toBe(2);
+    for (const tool of pagesOps) {
+      const pageObjectIdParam = tool.params.find((p) => p.name === "pageObjectId");
+      expect(pageObjectIdParam?.required, `${tool.name} should require 'pageObjectId'`).toBe(true);
+    }
+  });
+
+  it("declares bodyParams on create/batchUpdate and only those", () => {
+    const NEEDS_BODY = new Set(["create", "batchUpdate"]);
+    for (const tool of slidesTools) {
+      const method = tool.command[2];
+      const hasBody = Array.isArray(tool.bodyParams) && tool.bodyParams.length > 0;
+      if (NEEDS_BODY.has(method)) {
+        expect(hasBody, `${tool.name} should declare bodyParams`).toBe(true);
+      } else {
+        expect(hasBody, `${tool.name} should not declare bodyParams`).toBe(false);
+      }
+    }
   });
 });

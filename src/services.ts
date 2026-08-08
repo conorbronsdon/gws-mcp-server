@@ -382,6 +382,68 @@ const docsTools: ToolDef[] = [
   },
 ];
 
+// ── Slides ──────────────────────────────────────────────────────────────
+
+const slidesTools: ToolDef[] = [
+  {
+    name: "slides_get",
+    description: "Get a presentation's slides, layouts, masters, and page elements.",
+    command: ["slides", "presentations", "get"],
+    params: [
+      { name: "presentationId", description: "The presentation ID", type: "string", required: true },
+    ],
+    readOnly: true,
+  },
+  {
+    name: "slides_create",
+    description: "Create a new blank presentation.",
+    command: ["slides", "presentations", "create"],
+    params: [],
+    bodyParams: [
+      { name: "title", description: "Presentation title", type: "string", required: true },
+    ],
+    // Additive write: each call creates a new presentation.
+  },
+  {
+    name: "slides_batchUpdate",
+    description: "Apply updates to a presentation (insert/update/delete slides, text, shapes, tables, etc). Delete requests in a batch are permanent — the API has no undo.",
+    command: ["slides", "presentations", "batchUpdate"],
+    params: [
+      { name: "presentationId", description: "The presentation ID", type: "string", required: true },
+    ],
+    bodyParams: [
+      { name: "requests", description: "Array of update requests as JSON string", type: "string", required: true },
+    ],
+    // Classified with docs_batchUpdate/sheets_batchUpdate: an editing write,
+    // not advertised destructive, matching the *_batchUpdate precedent. NOTE
+    // the gmail_threads_modify analogy does NOT hold — trash has an API-level
+    // inverse (untrash), deleteObject does not — so the description carries
+    // the permanence warning instead of the annotation.
+  },
+  {
+    name: "slides_pages_get",
+    description: "Get a single page (slide, layout, or master) from a presentation.",
+    command: ["slides", "presentations", "pages", "get"],
+    params: [
+      { name: "presentationId", description: "The presentation ID", type: "string", required: true },
+      { name: "pageObjectId", description: "The object ID of the page (slide, layout, or master) to retrieve", type: "string", required: true },
+    ],
+    readOnly: true,
+  },
+  {
+    name: "slides_pages_getThumbnail",
+    description: "Get a thumbnail image URL for a page (slide, layout, or master).",
+    command: ["slides", "presentations", "pages", "getThumbnail"],
+    params: [
+      { name: "presentationId", description: "The presentation ID", type: "string", required: true },
+      { name: "pageObjectId", description: "The object ID of the page to render", type: "string", required: true },
+      { name: "thumbnailProperties.mimeType", description: "Thumbnail image format (PNG is the only supported value)", type: "string", required: false },
+      { name: "thumbnailProperties.thumbnailSize", description: "Thumbnail size: THUMBNAIL_SIZE_UNSPECIFIED, LARGE, MEDIUM, SMALL, or WIDTH2000_PX", type: "string", required: false },
+    ],
+    readOnly: true,
+  },
+];
+
 // ── Gmail ───────────────────────────────────────────────────────────────
 
 const gmailTools: ToolDef[] = [
@@ -612,6 +674,7 @@ export const SERVICE_TOOLS: Record<string, ToolDef[]> = {
   sheets: sheetsTools,
   calendar: calendarTools,
   docs: docsTools,
+  slides: slidesTools,
   gmail: gmailTools,
   tasks: tasksTools,
 };
