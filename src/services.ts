@@ -306,6 +306,7 @@ const calendarTools: ToolDef[] = [
     command: ["calendar", "events", "insert"],
     params: [
       { name: "calendarId", description: "Calendar ID", type: "string", required: true },
+      { name: "sendUpdates", description: "Sends invitation email to attendees when set: \"all\", \"externalOnly\", or \"none\" (default: none — no email, though the event may still appear on an attendee's calendar depending on their settings)", type: "string", required: false },
     ],
     bodyParams: [
       { name: "summary", description: "Event title", type: "string", required: true },
@@ -313,6 +314,7 @@ const calendarTools: ToolDef[] = [
       { name: "end", description: "End time JSON", type: "string", required: true },
       { name: "description", description: "Event description", type: "string", required: false },
       { name: "location", description: "Event location", type: "string", required: false },
+      { name: "attendees", description: "Attendees (JSON array as string, e.g. '[{\"email\":\"a@x.com\"},{\"email\":\"b@x.com\",\"optional\":true}]')", type: "string", required: false },
     ],
   },
   {
@@ -322,12 +324,14 @@ const calendarTools: ToolDef[] = [
     params: [
       { name: "calendarId", description: "Calendar ID", type: "string", required: true },
       { name: "eventId", description: "Event ID to update", type: "string", required: true },
+      { name: "sendUpdates", description: "Sends update email to attendees when set: \"all\", \"externalOnly\", or \"none\" (default: none — no email). With \"all\" or \"externalOnly\", attendees removed by this update receive a cancellation email", type: "string", required: false },
     ],
     bodyParams: [
       { name: "summary", description: "Event title", type: "string", required: false },
       { name: "start", description: "Start time JSON", type: "string", required: false },
       { name: "end", description: "End time JSON", type: "string", required: false },
       { name: "description", description: "Event description", type: "string", required: false },
+      { name: "attendees", description: "REPLACES the full attendee list — Google's patch overwrites array fields, so include everyone who should remain; anyone omitted is uninvited. JSON array as string, e.g. '[{\"email\":\"a@x.com\"},{\"email\":\"b@x.com\",\"optional\":true}]'", type: "string", required: false },
     ],
     idempotent: true,
   },
