@@ -151,8 +151,8 @@ A service's tool count (headers below) tracks its context cost: dropping `tasks`
 ### `calendar` (5 tools)
 - `calendar_events_list` — List events
 - `calendar_events_get` — Get event details
-- `calendar_events_insert` — Create events
-- `calendar_events_update` — Update events (only supplied fields change)
+- `calendar_events_insert` — Create events, optionally with `attendees`. `sendUpdates` controls invitation email (default `none` — no email, though the event may still appear on attendees' calendars depending on their settings)
+- `calendar_events_update` — Update events (only supplied fields change — except `attendees`, which replaces the whole list; omitted attendees are uninvited). Same `sendUpdates` support as insert
 - `calendar_events_delete` — Delete events
 
 ### `docs` (3 tools)
