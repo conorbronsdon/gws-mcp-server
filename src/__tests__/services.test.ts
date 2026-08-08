@@ -434,6 +434,10 @@ describe("slides service shape", () => {
   it("exposes both presentations and pages resources", () => {
     const resources = new Set(slidesTools.map((t) => t.command[1]));
     expect(resources.has("presentations")).toBe(true);
+    // pages is the THIRD command segment, so assert it where it actually lives —
+    // the Set above can never contain "pages".
+    const pagesTools = slidesTools.filter((t) => t.command[2] === "pages");
+    expect(pagesTools.map((t) => t.name).sort()).toEqual(["slides_pages_get", "slides_pages_getThumbnail"]);
   });
 
   it("requires 'presentationId' on every method except create", () => {

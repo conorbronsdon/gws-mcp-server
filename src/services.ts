@@ -402,7 +402,7 @@ const slidesTools: ToolDef[] = [
   },
   {
     name: "slides_batchUpdate",
-    description: "Apply updates to a presentation (insert/update/delete slides, text, shapes, tables, etc).",
+    description: "Apply updates to a presentation (insert/update/delete slides, text, shapes, tables, etc). Delete requests in a batch are permanent — the API has no undo.",
     command: ["slides", "presentations", "batchUpdate"],
     params: [
       { name: "presentationId", description: "The presentation ID", type: "string", required: true },
@@ -410,10 +410,11 @@ const slidesTools: ToolDef[] = [
     bodyParams: [
       { name: "requests", description: "Array of update requests as JSON string", type: "string", required: true },
     ],
-    // Additive write, same classification as docs_batchUpdate: requests are
-    // validated and applied atomically, and undo is available in the UI —
-    // this mirrors gmail_threads_modify's TRASH-is-reversible reasoning
-    // rather than treating an update mixing in a delete request as destructive.
+    // Classified with docs_batchUpdate/sheets_batchUpdate: an editing write,
+    // not advertised destructive, matching the *_batchUpdate precedent. NOTE
+    // the gmail_threads_modify analogy does NOT hold — trash has an API-level
+    // inverse (untrash), deleteObject does not — so the description carries
+    // the permanence warning instead of the annotation.
   },
   {
     name: "slides_pages_get",
