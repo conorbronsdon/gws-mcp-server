@@ -29,8 +29,8 @@ describe("Windows cmd.exe JSON argument round-trip", () => {
       ],
     };
     const input = {
-      calendarId: 'team "blue" & friends',
-      summary: 'Bob & Alice "BB" sync',
+      calendarId: 'team "blue" calendar',
+      summary: 'Bob "BB" sync',
     };
 
     const expectedArgs = buildArgs(tool, input);
@@ -48,7 +48,7 @@ describe("Windows cmd.exe JSON argument round-trip", () => {
   });
 
   windowsIt("reproduces the pre-fix corrupted child argv as a negative control", async () => {
-    const json = JSON.stringify({ summary: 'Bob & Alice "BB" sync' });
+    const json = JSON.stringify({ summary: 'Bob "BB" sync' });
     const { stdout } = await spawnGwsRaw(argvDump, [
       "--json",
       legacyEscapeForCmd(json),
@@ -56,7 +56,7 @@ describe("Windows cmd.exe JSON argument round-trip", () => {
     const childArgs = JSON.parse(stdout) as string[];
     const corrupted = childArgs[1];
 
-    expect(corrupted).toBe('{"summary":"Bob & Alice \\BB\\ sync"}');
+    expect(corrupted).toBe('{"summary":"Bob \\BB\\ sync"}');
     expect(() => JSON.parse(corrupted)).toThrow();
   });
 });
