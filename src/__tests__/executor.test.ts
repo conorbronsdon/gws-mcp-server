@@ -37,6 +37,14 @@ describe("escapeForCmd", () => {
     expect(escapeForCmd('say "hi"')).toBe('"say \\"hi\\""');
   });
 
+  it("doubles existing backslashes before inner double quotes", () => {
+    expect(escapeForCmd('say \\"hi\\"')).toBe('"say \\\\\\"hi\\\\\\""');
+  });
+
+  it("doubles trailing backslashes before the wrapper's closing quote", () => {
+    expect(escapeForCmd("C:\\temp\\")).toBe('"C:\\temp\\\\"');
+  });
+
   it("handles empty string", () => {
     expect(escapeForCmd("")).toBe('""');
   });

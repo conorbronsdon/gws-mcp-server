@@ -23,8 +23,16 @@ const CMD_METACHAR_RE = /[&|<>^%()!]/g;
  * Wraps in double quotes and escapes inner quotes + metacharacters.
  */
 export function escapeForCmd(value: string): string {
-  // Escape cmd.exe metacharacters with ^ and double quotes with \"
-  const escaped = value.replace(CMD_METACHAR_RE, "^$&").replace(/"/g, '\\"');
+  // Windows' argv parser treats backslashes immediately before a quote as
+  // escape characters. Double that run before adding the quote escape so a
+  // JSON sequence such as \" survives as a backslash plus a literal quote,
+  // rather than becoming the invalid JSON sequence \B after cmd.exe parsing.
+  // Trailing backslashes need the same treatment because the wrapper's closing
+  // quote follows them. This is the standard CommandLineToArgvW quoting rule.
+  const escaped = value
+    .replace(/(?=(\\+?)?)\1"/g, '$1$1\\"')
+    .replace(/(?=(\\+?)?)\1$/g, "$1$1")
+    .replace(CMD_METACHAR_RE, "^$&");
   return `"${escaped}"`;
 }
 
