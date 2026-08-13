@@ -105,7 +105,7 @@ describe("advertised annotations", () => {
     expect(SERVER_VERSION).toBe(pkg.version);
   });
 
-  it("only irreversible removals are advertised as destructive", () => {
+  it("advertises every tool capable of irreversible removal as destructive", () => {
     // tasks_tasks_clear is in this list and is not a *_delete: it permanently
     // removes completed tasks from a list, so it belongs here.
     const destructive = tools
@@ -114,7 +114,9 @@ describe("advertised annotations", () => {
       .sort();
     expect(destructive).toEqual([
       "calendar_events_delete",
+      "docs_batchUpdate",
       "drive_files_delete",
+      "slides_batchUpdate",
       "tasks_tasklists_delete",
       "tasks_tasks_clear",
       "tasks_tasks_delete",
@@ -291,6 +293,11 @@ describe("idempotentHint / openWorldHint", () => {
       "tasks_tasklists_insert",
       "tasks_tasks_insert",
     ]);
+  });
+
+  it("marks batchUpdate tools that can permanently delete content as destructive", () => {
+    expect(byName("docs_batchUpdate").annotations?.destructiveHint).toBe(true);
+    expect(byName("slides_batchUpdate").annotations?.destructiveHint).toBe(true);
   });
 
   it("gives the hand-registered tools all the hints the builder would", () => {
