@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 const workflow = readFileSync(
   new URL("../../.github/workflows/publish.yml", import.meta.url),
   "utf8",
-).replace(/\\r\\n/g, "\\n");
+).replace(/\r\n/g, "\n");
 
 function stepNamed(name: string): string {
   const marker = `      - name: ${name}\n`;
