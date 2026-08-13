@@ -371,7 +371,7 @@ const docsTools: ToolDef[] = [
   },
   {
     name: "docs_batchUpdate",
-    description: "Apply updates to a Google Doc (insert text, formatting, etc).",
+    description: "Apply updates to a Google Doc (insert, format, replace, or permanently delete content).",
     command: ["docs", "documents", "batchUpdate"],
     params: [
       { name: "documentId", description: "The document ID", type: "string", required: true },
@@ -379,6 +379,9 @@ const docsTools: ToolDef[] = [
     bodyParams: [
       { name: "requests", description: "Array of update requests as JSON string", type: "string", required: true },
     ],
+    // The request union includes deleteContentRange. An individual call may be
+    // additive, but the annotation describes the tool's worst-case capability.
+    destructive: true,
   },
 ];
 
@@ -414,11 +417,10 @@ const slidesTools: ToolDef[] = [
     bodyParams: [
       { name: "requests", description: "Array of update requests as JSON string", type: "string", required: true },
     ],
-    // Classified with docs_batchUpdate/sheets_batchUpdate: an editing write,
-    // not advertised destructive, matching the *_batchUpdate precedent. NOTE
-    // the gmail_threads_modify analogy does NOT hold — trash has an API-level
-    // inverse (untrash), deleteObject does not — so the description carries
-    // the permanence warning instead of the annotation.
+    // The request union includes deleteObject and deleteSlide. An individual
+    // call may be additive, but the annotation describes the tool's worst-case
+    // capability; unlike Gmail trash, these operations have no API-level undo.
+    destructive: true,
   },
   {
     name: "slides_pages_get",
