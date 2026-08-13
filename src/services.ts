@@ -371,7 +371,7 @@ const docsTools: ToolDef[] = [
   },
   {
     name: "docs_batchUpdate",
-    description: "Apply updates to a Google Doc (insert text, formatting, etc).",
+    description: "Apply updates to a Google Doc (insert/delete text, formatting, etc). Delete requests in a batch can permanently remove content — the API has no automatic undo.",
     command: ["docs", "documents", "batchUpdate"],
     params: [
       { name: "documentId", description: "The document ID", type: "string", required: true },
@@ -414,11 +414,9 @@ const slidesTools: ToolDef[] = [
     bodyParams: [
       { name: "requests", description: "Array of update requests as JSON string", type: "string", required: true },
     ],
-    // Classified with docs_batchUpdate/sheets_batchUpdate: an editing write,
-    // not advertised destructive, matching the *_batchUpdate precedent. NOTE
-    // the gmail_threads_modify analogy does NOT hold — trash has an API-level
-    // inverse (untrash), deleteObject does not — so the description carries
-    // the permanence warning instead of the annotation.
+    // Editing write with mixed request types; some delete variants have no
+    // API-level inverse. The description carries a permanence warning while
+    // #40 tracks the separate destructiveHint policy decision.
   },
   {
     name: "slides_pages_get",
