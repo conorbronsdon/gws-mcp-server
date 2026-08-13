@@ -406,6 +406,8 @@ describe("tool annotation classifications", () => {
     const expectDestructive = [
       "drive_files_delete",
       "calendar_events_delete",
+      "docs_batchUpdate",
+      "slides_batchUpdate",
       "tasks_tasklists_delete",
       "tasks_tasks_delete",
       "tasks_tasks_clear",
@@ -439,8 +441,8 @@ describe("tool annotation classifications", () => {
       "drive_files_create", "drive_files_copy", "drive_files_update", "drive_permissions_create",
       "sheets_values_update", "sheets_values_append",
       "calendar_events_insert", "calendar_events_update",
-      "docs_create", "docs_batchUpdate",
-      "slides_create", "slides_batchUpdate",
+      "docs_create",
+      "slides_create",
       "tasks_tasklists_insert", "tasks_tasklists_update",
       "tasks_tasks_insert", "tasks_tasks_update", "tasks_tasks_move",
     ];
@@ -488,15 +490,15 @@ describe("tool annotation classifications", () => {
     }
   });
 
-  it("classification counts match the intended split (19 read / 5 destructive / 18 additive)", () => {
+  it("classification counts match the intended split (19 read / 7 destructive / 16 additive)", () => {
     const read = allTools.filter((t) => buildAnnotations(t).readOnlyHint === true).length;
     const destructive = allTools.filter((t) => buildAnnotations(t).destructiveHint === true).length;
     const additive = allTools.filter(
       (t) => buildAnnotations(t).readOnlyHint === false && buildAnnotations(t).destructiveHint === false,
     ).length;
     expect(read).toBe(19);
-    expect(destructive).toBe(5);
-    expect(additive).toBe(18);
+    expect(destructive).toBe(7);
+    expect(additive).toBe(16);
     expect(read + destructive + additive).toBe(allTools.length);
   });
 });
