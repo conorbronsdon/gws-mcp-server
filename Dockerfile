@@ -5,13 +5,13 @@
 
 # Pin the multi-architecture base for reproducible MCP Catalog builds.
 # Dependabot checks the Node 22 / Alpine 3.24 tag weekly for a new digest.
-FROM node:22-alpine3.24@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS builder
+FROM node:26-alpine3.24@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3 AS builder
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 COPY src ./src
 RUN npm ci --ignore-scripts && npm run build
 
-FROM node:22-alpine3.24@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS gws-cli
+FROM node:26-alpine3.24@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3 AS gws-cli
 ARG TARGETARCH
 ARG GWS_VERSION=0.22.5
 ARG GWS_SHA256_AMD64=4db473dde4b1ab872e4ff35d769b0d4af1f1a6441a605e79d5cf8ada9c87e920
@@ -31,7 +31,7 @@ RUN set -eux; \
     rm "$archive"; \
     /usr/local/bin/gws --version
 
-FROM node:22-alpine3.24@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
+FROM node:26-alpine3.24@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
