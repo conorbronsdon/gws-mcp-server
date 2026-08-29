@@ -3,32 +3,45 @@
 # Run:    docker run -i --rm \
 #           -v "$HOME/.config/gws:/home/node/.config/gws" gws-mcp-server
 
-FROM node:22-alpine AS builder
+# Pin the multi-architecture base for reproducible MCP Catalog builds.
+# Dependabot checks the Node 22 / Alpine 3.24 tag weekly for a new digest.
+FROM node:22-alpine3.24@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS builder
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 COPY src ./src
 RUN npm ci --ignore-scripts && npm run build
 
-FROM node:22-alpine
+FROM node:22-alpine3.24@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS gws-cli
+ARG TARGETARCH
+ARG GWS_VERSION=0.22.5
+ARG GWS_SHA256_AMD64=4db473dde4b1ab872e4ff35d769b0d4af1f1a6441a605e79d5cf8ada9c87e920
+ARG GWS_SHA256_ARM64=e700fe63524932b10ec2130b47ece90aa850e66005fe52ccfc4cf8767bf9919a
+RUN set -eux; \
+    case "$TARGETARCH" in \
+      amd64) target=x86_64-unknown-linux-musl; expected="$GWS_SHA256_AMD64" ;; \
+      arm64) target=aarch64-unknown-linux-musl; expected="$GWS_SHA256_ARM64" ;; \
+      *) echo "Unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    archive=/tmp/google-workspace-cli.tar.gz; \
+    wget -q -O "$archive" \
+      "https://github.com/googleworkspace/cli/releases/download/v${GWS_VERSION}/google-workspace-cli-${target}.tar.gz"; \
+    echo "$expected  $archive" | sha256sum -c -; \
+    tar -xzf "$archive" -C /usr/local/bin ./gws; \
+    chmod 0755 /usr/local/bin/gws; \
+    rm "$archive"; \
+    /usr/local/bin/gws --version
+
+FROM node:22-alpine3.24@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 COPY --from=builder /app/build ./build
 
-# The gws CLI is a Rust binary this server shells out to. Its npm package is a
-# launcher whose postinstall downloads the matching release, so this install
-# must NOT use --ignore-scripts: with scripts off, the launcher instead fetches
-# the binary on first run, which needs network at tool-call time and write
-# access to a root-owned directory the runtime user does not have.
-# Alpine works because upstream publishes an x86_64-unknown-linux-musl build,
-# and an aarch64 one, so multi-arch builds work.
-# Scope of the version pin: it pins the launcher package, not the binary. The
-# postinstall does verify SHA256, but it fetches the checksum from the same
-# mutable GitHub release as the artifact, so that is a corruption check rather
-# than a trust anchor. A build-time failure is loud, not silent — install.js
-# exits 1 and BuildKit aborts the layer.
-RUN npm install -g @googleworkspace/cli@0.22.5
+# Copy only the independently checksum-pinned Rust binary. This avoids the npm
+# launcher's postinstall, whose artifact and checksum share one mutable origin,
+# and keeps the global npm package out of the runtime image.
+COPY --from=gws-cli /usr/local/bin/gws /usr/local/bin/gws
 
 # drive_files_download and any gws --output write a temp file into the working
 # directory, so it has to be writable by the runtime user.
