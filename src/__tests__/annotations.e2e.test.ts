@@ -322,7 +322,7 @@ describe("idempotentHint / openWorldHint", () => {
     const idem = tools.filter((t) => t.annotations?.idempotentHint === true).length;
     const nonIdem = tools.filter((t) => t.annotations?.idempotentHint === false).length;
     expect(reads).toBe(21);
-    expect(idem + nonIdem).toBe(45 - reads);
+    expect(idem + nonIdem).toBe(46 - reads);
     expect(idem).toBe(12);
     expect(nonIdem).toBe(13);
   });
