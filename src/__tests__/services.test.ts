@@ -58,7 +58,7 @@ describe("tool definitions integrity", () => {
   });
 
   it("has correct tool counts per service", () => {
-    expect(SERVICE_TOOLS["drive"].length).toBe(8);
+    expect(SERVICE_TOOLS["drive"].length).toBe(9);
     expect(SERVICE_TOOLS["sheets"].length).toBe(5);
     expect(SERVICE_TOOLS["calendar"].length).toBe(6);
     expect(SERVICE_TOOLS["docs"].length).toBe(3);
@@ -422,7 +422,7 @@ describe("tool annotation classifications", () => {
 
   it("named read tools carry readOnlyHint:true", () => {
     const expectReadOnly = [
-      "drive_files_list", "drive_files_get", "drive_files_export",
+      "drive_files_list", "drive_files_get", "drive_files_export", "drive_permissions_list",
       "sheets_get", "sheets_values_get",
       "calendar_events_list", "calendar_events_get", "calendar_freebusy_query",
       "docs_get",

@@ -131,7 +131,7 @@ A service's tool count (headers below) tracks its context cost: dropping `tasks`
 
 ## Available services & tools
 
-### `drive` (9 tools)
+### `drive` (10 tools)
 - `drive_files_list` — Search and list files
 - `drive_files_get` — Get file metadata
 - `drive_files_create` — Create files (with optional upload)
@@ -141,6 +141,7 @@ A service's tool count (headers below) tracks its context cost: dropping `tasks`
 - `drive_files_export` — Export Google Workspace files (Doc, Sheet, Slide) to other formats
 - `drive_files_download` — Download file content (text inline, binary as base64 or saved to a path; Google-native files are exported to a readable format)
 - `drive_permissions_create` — Share files
+- `drive_permissions_list` — List all permissions on a file (audit sharing state, e.g. check for public access)
 
 ### `sheets` (5 tools)
 - `sheets_get` — Get spreadsheet metadata
