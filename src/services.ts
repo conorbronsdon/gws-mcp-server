@@ -361,6 +361,19 @@ const calendarTools: ToolDef[] = [
     destructive: true,
     idempotent: true,
   },
+  {
+    name: "calendar_freebusy_query",
+    description: "Query free/busy information for one or more calendars over a time range.",
+    command: ["calendar", "freebusy", "query"],
+    params: [],
+    bodyParams: [
+      { name: "timeMin", description: "Start of the interval, RFC3339 timestamp (e.g. \"2026-03-10T00:00:00Z\")", type: "string", required: true },
+      { name: "timeMax", description: "End of the interval, RFC3339 timestamp", type: "string", required: true },
+      { name: "timeZone", description: "IANA time zone for the response (e.g. \"America/Los_Angeles\")", type: "string", required: false },
+      { name: "items", description: "Calendars/groups to query, as JSON array string, e.g. '[{\"id\":\"primary\"}]'", type: "string", required: true },
+    ],
+    readOnly: true,
+  },
 ];
 
 // ── Docs ────────────────────────────────────────────────────────────────
