@@ -272,7 +272,7 @@ const sheetsTools: ToolDef[] = [
   },
   {
     name: "sheets_batchUpdate",
-    description: "Apply updates to a spreadsheet (conditional formatting, cell/border formatting, adding sheets, and more).",
+    description: "Apply updates to a spreadsheet (conditional formatting, cell/border formatting, adding sheets, and more). Can also permanently delete content — e.g. removing a sheet or a conditional formatting rule — with no undo via the API.",
     command: ["sheets", "spreadsheets", "batchUpdate"],
     params: [
       { name: "spreadsheetId", description: "The spreadsheet ID", type: "string", required: true },

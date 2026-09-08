@@ -147,7 +147,7 @@ A service's tool count (headers below) tracks its context cost: dropping `tasks`
 - `sheets_values_get` — Read cell values
 - `sheets_values_update` — Write cell values
 - `sheets_values_append` — Append rows
-- `sheets_batchUpdate` — Apply updates to a spreadsheet (conditional formatting, cell/border formatting, adding sheets, and more)
+- `sheets_batchUpdate` — Apply updates to a spreadsheet (conditional formatting, cell/border formatting, adding sheets, and more; delete requests are permanent)
 
 ### `calendar` (5 tools)
 - `calendar_events_list` — List events
