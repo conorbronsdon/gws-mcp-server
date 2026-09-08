@@ -2,7 +2,7 @@
 
 # gws-mcp-server
 
-Google Workspace for AI agents: Gmail, Calendar, Drive, Sheets, Docs, Slides, and Tasks as a curated set of 44 [Model Context Protocol](https://modelcontextprotocol.io/) tools, built on the official [Google Workspace CLI (`gws`)](https://github.com/googleworkspace/cli).
+Google Workspace for AI agents: Gmail, Calendar, Drive, Sheets, Docs, Slides, and Tasks as a curated set of 45 [Model Context Protocol](https://modelcontextprotocol.io/) tools, built on the official [Google Workspace CLI (`gws`)](https://github.com/googleworkspace/cli).
 
 [![npm version](https://img.shields.io/npm/v/gws-mcp-server?style=flat-square)](https://www.npmjs.com/package/gws-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
@@ -102,7 +102,7 @@ npm install && npm run build
 
 ### `--read-only`
 
-`--read-only` registers **20 tools** instead of 44. Every tool that writes to Google is left unregistered, so it never appears in `tools/list` and there is nothing for an agent to call — including `gmail_drafts_create`, which is a write even though it never sends. `drive_files_download` stays, since it reads.
+`--read-only` registers **20 tools** instead of 45. Every tool that writes to Google is left unregistered, so it never appears in `tools/list` and there is nothing for an agent to call — including `gmail_drafts_create`, which is a write even though it never sends. `drive_files_download` stays, since it reads.
 
 ```bash
 gws-mcp-server --read-only
@@ -113,7 +113,7 @@ This constrains the **agent, not the credential**. The token on disk keeps whate
 
 ### Trimming context cost
 
-Every registered tool rides along in each conversation: the full registry is roughly 30 KB of `tools/list` payload (about 7.6K tokens) that your MCP client loads before anything else happens. The two flags above compose, and dropping whole services you don't use is the cheapest context win there is:
+Every registered tool rides along in each conversation: the full registry is 31,196 B of `tools/list` payload (~7.8K tokens) that your MCP client loads before anything else happens. The two flags above compose, and dropping whole services you don't use is the cheapest context win there is:
 
 ```bash
 gws-mcp-server --services calendar                       # calendar assistant: 5 tools
@@ -142,11 +142,12 @@ A service's tool count (headers below) tracks its context cost: dropping `tasks`
 - `drive_files_download` — Download file content (text inline, binary as base64 or saved to a path; Google-native files are exported to a readable format)
 - `drive_permissions_create` — Share files
 
-### `sheets` (4 tools)
+### `sheets` (5 tools)
 - `sheets_get` — Get spreadsheet metadata
 - `sheets_values_get` — Read cell values
 - `sheets_values_update` — Write cell values
 - `sheets_values_append` — Append rows
+- `sheets_batchUpdate` — Apply updates to a spreadsheet (conditional formatting, cell/border formatting, adding sheets, and more)
 
 ### `calendar` (5 tools)
 - `calendar_events_list` — List events
@@ -191,7 +192,7 @@ A service's tool count (headers below) tracks its context cost: dropping `tasks`
 
 > **Update semantics:** the `*_update` tools (calendar events, tasks, task lists) use the Google API's `patch` verb — they merge the fields you supply and leave the rest untouched. To *clear* an existing value, pass it explicitly (e.g. an empty string) rather than omitting it.
 
-**Total: 44 tools** (vs 200-400 in the old implementation)
+**Total: 45 tools** (vs 200-400 in the old implementation)
 
 ## Adding new tools
 
