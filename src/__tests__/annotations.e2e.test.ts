@@ -58,7 +58,7 @@ const byName = (n: string): ListedTool => {
 
 describe("advertised annotations", () => {
   it("registers both hand-written tools alongside the registry tools", () => {
-    expect(tools.length).toBe(44);
+    expect(tools.length).toBe(45);
     expect(byName("drive_files_download")).toBeDefined();
     expect(byName("gmail_drafts_create")).toBeDefined();
   });
@@ -116,6 +116,7 @@ describe("advertised annotations", () => {
       "calendar_events_delete",
       "docs_batchUpdate",
       "drive_files_delete",
+      "sheets_batchUpdate",
       "slides_batchUpdate",
       "tasks_tasklists_delete",
       "tasks_tasks_clear",
@@ -151,8 +152,8 @@ describe("startup tool count", () => {
     // Guards against the fix being "fudge the string": the number has to come
     // from somewhere other than the registry length.
     const registry = getToolsForServices(ALL_SERVICES);
-    expect(registry.length).toBe(42);
-    expect(countRegisteredTools(registry, ALL_SERVICES)).toBe(44);
+    expect(registry.length).toBe(43);
+    expect(countRegisteredTools(registry, ALL_SERVICES)).toBe(45);
     expect(countRegisteredTools(registry, ["sheets"])).toBe(registry.length);
   });
 });
@@ -184,8 +185,8 @@ describe("--read-only", () => {
     const dropped = tools
       .filter((t) => t.annotations?.readOnlyHint !== true)
       .map((t) => t.name);
-    // 44 default - 20 read-only = 24 writes, all gone.
-    expect(dropped.length).toBe(24);
+    // 45 default - 20 read-only = 25 writes, all gone.
+    expect(dropped.length).toBe(25);
     for (const name of dropped) {
       expect(roTools.find((t) => t.name === name)).toBeUndefined();
     }
@@ -202,7 +203,7 @@ describe("--read-only", () => {
   });
 
   it("is additive — the default server is unchanged", () => {
-    expect(tools.length).toBe(44);
+    expect(tools.length).toBe(45);
     expect(tools.find((t) => t.name === "gmail_drafts_create")).toBeDefined();
     expect(tools.find((t) => t.name === "drive_files_delete")).toBeDefined();
   });
@@ -227,8 +228,8 @@ describe("idempotentHint / openWorldHint", () => {
       .filter((t) => typeof t.annotations?.openWorldHint !== "boolean")
       .map((t) => t.name);
     expect(missing).toEqual([]);
-    // All 44 reach Google Workspace, whose state changes independently of us.
-    expect(tools.filter((t) => t.annotations?.openWorldHint === true).length).toBe(44);
+    // All 45 reach Google Workspace, whose state changes independently of us.
+    expect(tools.filter((t) => t.annotations?.openWorldHint === true).length).toBe(45);
   });
 
   it("every write advertises idempotentHint, and no read does", () => {
@@ -287,6 +288,7 @@ describe("idempotentHint / openWorldHint", () => {
       "drive_files_create",
       "drive_permissions_create",
       "gmail_drafts_create",
+      "sheets_batchUpdate",
       "sheets_values_append",
       "slides_batchUpdate",
       "slides_create",
@@ -298,6 +300,7 @@ describe("idempotentHint / openWorldHint", () => {
   it("marks batchUpdate tools that can permanently delete content as destructive", () => {
     expect(byName("docs_batchUpdate").annotations?.destructiveHint).toBe(true);
     expect(byName("slides_batchUpdate").annotations?.destructiveHint).toBe(true);
+    expect(byName("sheets_batchUpdate").annotations?.destructiveHint).toBe(true);
   });
 
   it("gives the hand-registered tools all the hints the builder would", () => {
@@ -314,13 +317,13 @@ describe("idempotentHint / openWorldHint", () => {
     });
   });
 
-  it("accounts for all 44 tools", () => {
+  it("accounts for all 45 tools", () => {
     const reads = tools.filter((t) => t.annotations?.readOnlyHint === true).length;
     const idem = tools.filter((t) => t.annotations?.idempotentHint === true).length;
     const nonIdem = tools.filter((t) => t.annotations?.idempotentHint === false).length;
     expect(reads).toBe(20);
-    expect(idem + nonIdem).toBe(44 - reads);
+    expect(idem + nonIdem).toBe(45 - reads);
     expect(idem).toBe(12);
-    expect(nonIdem).toBe(12);
+    expect(nonIdem).toBe(13);
   });
 });

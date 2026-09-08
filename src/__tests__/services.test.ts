@@ -59,7 +59,7 @@ describe("tool definitions integrity", () => {
 
   it("has correct tool counts per service", () => {
     expect(SERVICE_TOOLS["drive"].length).toBe(8);
-    expect(SERVICE_TOOLS["sheets"].length).toBe(4);
+    expect(SERVICE_TOOLS["sheets"].length).toBe(5);
     expect(SERVICE_TOOLS["calendar"].length).toBe(5);
     expect(SERVICE_TOOLS["docs"].length).toBe(3);
     expect(SERVICE_TOOLS["slides"].length).toBe(5);
@@ -67,8 +67,8 @@ describe("tool definitions integrity", () => {
     expect(SERVICE_TOOLS["tasks"].length).toBe(12);
   });
 
-  it("total tool count is 42", () => {
-    expect(allTools.length).toBe(42);
+  it("total tool count is 43", () => {
+    expect(allTools.length).toBe(43);
   });
 
   it("all params have required fields", () => {
@@ -408,6 +408,7 @@ describe("tool annotation classifications", () => {
       "calendar_events_delete",
       "docs_batchUpdate",
       "slides_batchUpdate",
+      "sheets_batchUpdate",
       "tasks_tasklists_delete",
       "tasks_tasks_delete",
       "tasks_tasks_clear",
@@ -490,14 +491,14 @@ describe("tool annotation classifications", () => {
     }
   });
 
-  it("classification counts match the intended split (19 read / 7 destructive / 16 additive)", () => {
+  it("classification counts match the intended split (19 read / 8 destructive / 16 additive)", () => {
     const read = allTools.filter((t) => buildAnnotations(t).readOnlyHint === true).length;
     const destructive = allTools.filter((t) => buildAnnotations(t).destructiveHint === true).length;
     const additive = allTools.filter(
       (t) => buildAnnotations(t).readOnlyHint === false && buildAnnotations(t).destructiveHint === false,
     ).length;
     expect(read).toBe(19);
-    expect(destructive).toBe(7);
+    expect(destructive).toBe(8);
     expect(additive).toBe(16);
     expect(read + destructive + additive).toBe(allTools.length);
   });

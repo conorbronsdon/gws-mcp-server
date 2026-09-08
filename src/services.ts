@@ -270,6 +270,21 @@ const sheetsTools: ToolDef[] = [
       { name: "values", description: "2D array of values as JSON string", type: "string", required: true },
     ],
   },
+  {
+    name: "sheets_batchUpdate",
+    description: "Apply updates to a spreadsheet (conditional formatting, cell/border formatting, adding sheets, and more). Can also permanently delete content — e.g. removing a sheet or a conditional formatting rule — with no undo via the API.",
+    command: ["sheets", "spreadsheets", "batchUpdate"],
+    params: [
+      { name: "spreadsheetId", description: "The spreadsheet ID", type: "string", required: true },
+    ],
+    bodyParams: [
+      { name: "requests", description: "Array of update requests as JSON string", type: "string", required: true },
+    ],
+    // Mirrors docs_batchUpdate: the request union includes delete-capable
+    // requests (e.g. deleteConditionalFormatRule, deleteSheet), so the
+    // annotation describes the tool's worst-case capability, not per-call behavior.
+    destructive: true,
+  },
 ];
 
 // ── Calendar ───────────────────────────────────────────────────────────
