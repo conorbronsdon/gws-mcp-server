@@ -216,6 +216,19 @@ const driveTools: ToolDef[] = [
       { name: "emailAddress", description: "Email of user/group (required for user/group type)", type: "string", required: false },
     ],
   },
+  {
+    name: "drive_permissions_list",
+    description: "List all permissions on a file. Use to audit sharing state — e.g. a permission with type \"anyone\" means the file is publicly accessible; there is no separate is-public field. Pass fields (e.g. \"permissions(id,type,role,emailAddress,domain)\") to identify grantees — the default response omits emailAddress/domain.",
+    command: ["drive", "permissions", "list"],
+    params: [
+      { name: "fileId", description: "The file to list permissions for", type: "string", required: true },
+      { name: "pageSize", description: "Max permissions to return", type: "number", required: false },
+      { name: "pageToken", description: "Page token from a previous call", type: "string", required: false },
+      { name: "fields", description: "Fields to include (e.g. \"permissions(id,type,role,emailAddress,domain)\")", type: "string", required: false },
+    ],
+    defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
+    readOnly: true,
+  },
 ];
 
 // ── Sheets ──────────────────────────────────────────────────────────────

@@ -58,7 +58,7 @@ describe("tool definitions integrity", () => {
   });
 
   it("has correct tool counts per service", () => {
-    expect(SERVICE_TOOLS["drive"].length).toBe(8);
+    expect(SERVICE_TOOLS["drive"].length).toBe(9);
     expect(SERVICE_TOOLS["sheets"].length).toBe(5);
     expect(SERVICE_TOOLS["calendar"].length).toBe(6);
     expect(SERVICE_TOOLS["docs"].length).toBe(3);
@@ -67,8 +67,8 @@ describe("tool definitions integrity", () => {
     expect(SERVICE_TOOLS["tasks"].length).toBe(12);
   });
 
-  it("total tool count is 44", () => {
-    expect(allTools.length).toBe(44);
+  it("total tool count is 45", () => {
+    expect(allTools.length).toBe(45);
   });
 
   it("all params have required fields", () => {
@@ -309,6 +309,61 @@ describe("calendar attendees + sendUpdates", () => {
   });
 });
 
+// ── drive_permissions_list: shared drives + grantee identification ───────
+// Two silent-failure modes, both invisible unless something asserts on the
+// generated --params. Without defaultParams the shared-drive flag never
+// reaches the CLI, so listing permissions fails on exactly the shared-drive
+// files the other drive tools can already read. Without a declared `fields`
+// param buildArgs discards the caller's field mask, and Drive's default
+// permissions response carries only id/type/kind/role — an audit can see
+// that a file is shared but not with whom, which is the tool's whole point.
+
+describe("drive_permissions_list (shared drives + grantee fields)", () => {
+  const tool = SERVICE_TOOLS["drive"].find((t) => t.name === "drive_permissions_list")!;
+
+  it("sends supportsAllDrives without the caller asking, like drive_files_get", () => {
+    const args = buildArgs(tool, { fileId: "file123" });
+    const paramsIdx = args.indexOf("--params");
+    expect(paramsIdx).toBeGreaterThan(-1);
+    // Compare against the same escaping buildArgs applies, so this holds on
+    // Windows (cmd-escaped) as well as Linux/macOS (escapeJsonArg is a no-op).
+    expect(args[paramsIdx + 1]).toBe(
+      escapeJsonArg(JSON.stringify({ supportsAllDrives: true, fileId: "file123" })),
+    );
+  });
+
+  it("declares fields as an optional param — undeclared params are discarded", () => {
+    const fields = tool.params.find((p) => p.name === "fields");
+    expect(fields, "drive_permissions_list should declare 'fields'").toBeDefined();
+    expect(fields!.required).toBe(false);
+    expect(fields!.type).toBe("string");
+  });
+
+  it("passes a caller's field mask through, so grantees can be identified", () => {
+    const fields = "nextPageToken,permissions(id,type,role,emailAddress,domain)";
+    const args = buildArgs(tool, { fileId: "file123", fields });
+    const paramsIdx = args.indexOf("--params");
+    expect(args[paramsIdx + 1]).toBe(
+      escapeJsonArg(JSON.stringify({ supportsAllDrives: true, fileId: "file123", fields })),
+    );
+  });
+
+  it("keeps pagination working alongside the injected default", () => {
+    const args = buildArgs(tool, { fileId: "file123", pageSize: 100, pageToken: "tok" });
+    const paramsIdx = args.indexOf("--params");
+    expect(args[paramsIdx + 1]).toBe(
+      escapeJsonArg(
+        JSON.stringify({
+          supportsAllDrives: true,
+          fileId: "file123",
+          pageSize: 100,
+          pageToken: "tok",
+        }),
+      ),
+    );
+  });
+});
+
 // ── Tool annotations (issue #5) ──────────────────────────────────────────
 
 describe("buildAnnotations mapping", () => {
@@ -422,7 +477,7 @@ describe("tool annotation classifications", () => {
 
   it("named read tools carry readOnlyHint:true", () => {
     const expectReadOnly = [
-      "drive_files_list", "drive_files_get", "drive_files_export",
+      "drive_files_list", "drive_files_get", "drive_files_export", "drive_permissions_list",
       "sheets_get", "sheets_values_get",
       "calendar_events_list", "calendar_events_get", "calendar_freebusy_query",
       "docs_get",
@@ -491,13 +546,13 @@ describe("tool annotation classifications", () => {
     }
   });
 
-  it("classification counts match the intended split (20 read / 8 destructive / 16 additive)", () => {
+  it("classification counts match the intended split (21 read / 8 destructive / 16 additive)", () => {
     const read = allTools.filter((t) => buildAnnotations(t).readOnlyHint === true).length;
     const destructive = allTools.filter((t) => buildAnnotations(t).destructiveHint === true).length;
     const additive = allTools.filter(
       (t) => buildAnnotations(t).readOnlyHint === false && buildAnnotations(t).destructiveHint === false,
     ).length;
-    expect(read).toBe(20);
+    expect(read).toBe(21);
     expect(destructive).toBe(8);
     expect(additive).toBe(16);
     expect(read + destructive + additive).toBe(allTools.length);
