@@ -67,8 +67,8 @@ describe("tool definitions integrity", () => {
     expect(SERVICE_TOOLS["tasks"].length).toBe(12);
   });
 
-  it("total tool count is 44", () => {
-    expect(allTools.length).toBe(44);
+  it("total tool count is 45", () => {
+    expect(allTools.length).toBe(45);
   });
 
   it("all params have required fields", () => {
@@ -491,13 +491,13 @@ describe("tool annotation classifications", () => {
     }
   });
 
-  it("classification counts match the intended split (20 read / 8 destructive / 16 additive)", () => {
+  it("classification counts match the intended split (21 read / 8 destructive / 16 additive)", () => {
     const read = allTools.filter((t) => buildAnnotations(t).readOnlyHint === true).length;
     const destructive = allTools.filter((t) => buildAnnotations(t).destructiveHint === true).length;
     const additive = allTools.filter(
       (t) => buildAnnotations(t).readOnlyHint === false && buildAnnotations(t).destructiveHint === false,
     ).length;
-    expect(read).toBe(20);
+    expect(read).toBe(21);
     expect(destructive).toBe(8);
     expect(additive).toBe(16);
     expect(read + destructive + additive).toBe(allTools.length);
