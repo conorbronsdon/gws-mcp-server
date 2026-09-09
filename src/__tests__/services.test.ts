@@ -309,6 +309,61 @@ describe("calendar attendees + sendUpdates", () => {
   });
 });
 
+// ── drive_permissions_list: shared drives + grantee identification ───────
+// Two silent-failure modes, both invisible unless something asserts on the
+// generated --params. Without defaultParams the shared-drive flag never
+// reaches the CLI, so listing permissions fails on exactly the shared-drive
+// files the other drive tools can already read. Without a declared `fields`
+// param buildArgs discards the caller's field mask, and Drive's default
+// permissions response carries only id/type/kind/role — an audit can see
+// that a file is shared but not with whom, which is the tool's whole point.
+
+describe("drive_permissions_list (shared drives + grantee fields)", () => {
+  const tool = SERVICE_TOOLS["drive"].find((t) => t.name === "drive_permissions_list")!;
+
+  it("sends supportsAllDrives without the caller asking, like drive_files_get", () => {
+    const args = buildArgs(tool, { fileId: "file123" });
+    const paramsIdx = args.indexOf("--params");
+    expect(paramsIdx).toBeGreaterThan(-1);
+    // Compare against the same escaping buildArgs applies, so this holds on
+    // Windows (cmd-escaped) as well as Linux/macOS (escapeJsonArg is a no-op).
+    expect(args[paramsIdx + 1]).toBe(
+      escapeJsonArg(JSON.stringify({ supportsAllDrives: true, fileId: "file123" })),
+    );
+  });
+
+  it("declares fields as an optional param — undeclared params are discarded", () => {
+    const fields = tool.params.find((p) => p.name === "fields");
+    expect(fields, "drive_permissions_list should declare 'fields'").toBeDefined();
+    expect(fields!.required).toBe(false);
+    expect(fields!.type).toBe("string");
+  });
+
+  it("passes a caller's field mask through, so grantees can be identified", () => {
+    const fields = "nextPageToken,permissions(id,type,role,emailAddress,domain)";
+    const args = buildArgs(tool, { fileId: "file123", fields });
+    const paramsIdx = args.indexOf("--params");
+    expect(args[paramsIdx + 1]).toBe(
+      escapeJsonArg(JSON.stringify({ supportsAllDrives: true, fileId: "file123", fields })),
+    );
+  });
+
+  it("keeps pagination working alongside the injected default", () => {
+    const args = buildArgs(tool, { fileId: "file123", pageSize: 100, pageToken: "tok" });
+    const paramsIdx = args.indexOf("--params");
+    expect(args[paramsIdx + 1]).toBe(
+      escapeJsonArg(
+        JSON.stringify({
+          supportsAllDrives: true,
+          fileId: "file123",
+          pageSize: 100,
+          pageToken: "tok",
+        }),
+      ),
+    );
+  });
+});
+
 // ── Tool annotations (issue #5) ──────────────────────────────────────────
 
 describe("buildAnnotations mapping", () => {
