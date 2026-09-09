@@ -134,7 +134,9 @@ export function buildZodSchema(tool: ToolDef): Record<string, z.ZodTypeAny> {
         field = z.boolean().describe(p.description);
         break;
       default:
-        field = z.string().describe(p.description);
+        field = p.enum
+          ? z.enum(p.enum as [string, ...string[]]).describe(p.description)
+          : z.string().describe(p.description);
     }
 
     if (!p.required) {

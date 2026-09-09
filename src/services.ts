@@ -102,6 +102,9 @@ export interface ParamDef {
   description: string;
   type: "string" | "number" | "boolean";
   required: boolean;
+  /** Closed set of accepted values (string params only). Enforced at the tool
+   *  boundary via z.enum, so an out-of-set value never reaches the wire. */
+  enum?: string[];
 }
 
 // ── Drive ──────────────────────────────────────────────────────────────
@@ -334,7 +337,7 @@ const calendarTools: ToolDef[] = [
     command: ["calendar", "events", "insert"],
     params: [
       { name: "calendarId", description: "Calendar ID", type: "string", required: true },
-      { name: "sendUpdates", description: "Sends invitation email to attendees when set: \"all\", \"externalOnly\", or \"none\" (default: none — no email, though the event may still appear on an attendee's calendar depending on their settings)", type: "string", required: false },
+      { name: "sendUpdates", description: "Sends invitation email to attendees when set: \"all\", \"externalOnly\", or \"none\" (default: none — no email, though the event may still appear on an attendee's calendar depending on their settings)", type: "string", required: false, enum: ["all", "externalOnly", "none"] },
     ],
     bodyParams: [
       { name: "summary", description: "Event title", type: "string", required: true },
@@ -352,7 +355,7 @@ const calendarTools: ToolDef[] = [
     params: [
       { name: "calendarId", description: "Calendar ID", type: "string", required: true },
       { name: "eventId", description: "Event ID to update", type: "string", required: true },
-      { name: "sendUpdates", description: "Sends update email to attendees when set: \"all\", \"externalOnly\", or \"none\" (default: none — no email). With \"all\" or \"externalOnly\", attendees removed by this update receive a cancellation email", type: "string", required: false },
+      { name: "sendUpdates", description: "Sends update email to attendees when set: \"all\", \"externalOnly\", or \"none\" (default: none — no email). With \"all\" or \"externalOnly\", attendees removed by this update receive a cancellation email", type: "string", required: false, enum: ["all", "externalOnly", "none"] },
     ],
     bodyParams: [
       { name: "summary", description: "Event title", type: "string", required: false },
@@ -361,7 +364,8 @@ const calendarTools: ToolDef[] = [
       { name: "description", description: "Event description", type: "string", required: false },
       { name: "attendees", description: "REPLACES the full attendee list — Google's patch overwrites array fields, so include everyone who should remain; anyone omitted is uninvited. JSON array as string, e.g. '[{\"email\":\"a@x.com\"},{\"email\":\"b@x.com\",\"optional\":true}]'", type: "string", required: false },
     ],
-    idempotent: true,
+    // Not marked idempotent since sendUpdates landed: with "all"/"externalOnly",
+    // every retry re-emails all attendees — an additional effect per call.
   },
   {
     name: "calendar_events_delete",
