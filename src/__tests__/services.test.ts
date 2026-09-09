@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { getToolsForServices, SERVICE_TOOLS, ALL_SERVICES, buildAnnotations, type ToolDef } from "../services.js";
 import { buildArgs, escapeJsonArg } from "../executor.js";
+import { buildZodSchema } from "../index.js";
 
 describe("getToolsForServices", () => {
   it("returns tools for requested services", () => {
@@ -294,6 +295,31 @@ describe("calendar attendees + sendUpdates", () => {
       escapeJsonArg(JSON.stringify({ calendarId: "primary", eventId: "evt123", sendUpdates: "all" }))
     );
     expect(args[jsonIdx + 1]).toBe(escapeJsonArg(JSON.stringify({ attendees: [{ email: "a@x.com" }] })));
+  });
+
+  it("both tools constrain sendUpdates to the closed set Google accepts", () => {
+    // Pins the real tools, not just buildZodSchema's enum branch. Without this
+    // the enum could be dropped from either definition and index.test.ts would
+    // still pass on its synthetic tool.
+    for (const tool of [insertTool, updateTool]) {
+      const sendUpdates = tool.params.find((p) => p.name === "sendUpdates")!;
+      expect(sendUpdates.enum, `${tool.name} should constrain 'sendUpdates'`).toEqual([
+        "all",
+        "externalOnly",
+        "none",
+      ]);
+      const schema = buildZodSchema(tool);
+      expect(schema.sendUpdates.safeParse("all").success).toBe(true);
+      expect(schema.sendUpdates.safeParse("everyone").success).toBe(false);
+    }
+  });
+
+  it("update is not marked idempotent — a retry with sendUpdates re-emails attendees", () => {
+    // The tool patches, so the event state is idempotent, but the notification
+    // is not: "all"/"externalOnly" sends mail on every call. A client reading
+    // idempotentHint as permission to retry would mail attendees twice.
+    expect(updateTool.idempotent).toBeUndefined();
+    expect(buildAnnotations(updateTool).idempotentHint).toBe(false);
   });
 
   it("omitting attendees/sendUpdates keeps existing insert/update calls unchanged", () => {
