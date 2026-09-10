@@ -105,7 +105,7 @@ describe("advertised annotations", () => {
     expect(SERVER_VERSION).toBe(pkg.version);
   });
 
-  it("advertises every tool capable of irreversible removal as destructive", () => {
+  it("advertises tools that remove data or capabilities as destructive", () => {
     // tasks_tasks_clear is in this list and is not a *_delete: it permanently
     // removes completed tasks from a list, so it belongs here.
     const destructive = tools
@@ -117,6 +117,7 @@ describe("advertised annotations", () => {
       "docs_batchUpdate",
       "drive_files_delete",
       "drive_permissions_delete",
+      "drive_permissions_update",
       "sheets_batchUpdate",
       "slides_batchUpdate",
       "tasks_tasklists_delete",

@@ -234,7 +234,7 @@ const driveTools: ToolDef[] = [
   },
   {
     name: "drive_permissions_update",
-    description: "Change an existing permission's role on a file (e.g. reader to writer). Per the Drive API: concurrent permissions operations on the same file aren't supported, only the last update is applied.",
+    description: "Change an existing permission's role on a file (e.g. reader to writer). Can remove capabilities by downgrading a role. Ownership transfers are not supported. Per the Drive API: concurrent permissions operations on the same file aren't supported, only the last update is applied.",
     command: ["drive", "permissions", "update"],
     params: [
       { name: "fileId", description: "The file the permission belongs to", type: "string", required: true },
@@ -242,11 +242,11 @@ const driveTools: ToolDef[] = [
       { name: "fields", description: "Fields to return (e.g. \"id,role,type,emailAddress\")", type: "string", required: false },
     ],
     bodyParams: [
-      { name: "role", description: "New role: owner, organizer, fileOrganizer, writer, commenter, reader", type: "string", required: true },
+      { name: "role", description: "New non-owner role", type: "string", required: true, enum: ["organizer", "fileOrganizer", "writer", "commenter", "reader"] },
     ],
     defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
-    // Additive/reversible write, matching drive_files_update: a role change
-    // can be changed back, unlike a delete.
+    // Downgrading a role removes capabilities, so updates are not only additive.
+    destructive: true,
     idempotent: true,
   },
   {

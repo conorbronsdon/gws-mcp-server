@@ -142,7 +142,7 @@ A service's tool count (headers below) tracks its context cost: dropping `tasks`
 - `drive_files_download` — Download file content (text inline, binary as base64 or saved to a path; Google-native files are exported to a readable format)
 - `drive_permissions_create` — Share files
 - `drive_permissions_list` — List all permissions on a file (audit sharing state, e.g. check for public access)
-- `drive_permissions_update` — Change an existing permission's role (e.g. reader to writer)
+- `drive_permissions_update` — Change an existing permission's role (e.g. reader to writer); downgrades remove capabilities. Ownership transfers are not supported.
 - `drive_permissions_delete` — Revoke a permission from a file
 
 ### `sheets` (5 tools)
