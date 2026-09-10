@@ -58,7 +58,7 @@ const byName = (n: string): ListedTool => {
 
 describe("advertised annotations", () => {
   it("registers both hand-written tools alongside the registry tools", () => {
-    expect(tools.length).toBe(49);
+    expect(tools.length).toBe(50);
     expect(byName("drive_files_download")).toBeDefined();
     expect(byName("gmail_drafts_create")).toBeDefined();
   });
@@ -154,8 +154,8 @@ describe("startup tool count", () => {
     // Guards against the fix being "fudge the string": the number has to come
     // from somewhere other than the registry length.
     const registry = getToolsForServices(ALL_SERVICES);
-    expect(registry.length).toBe(47);
-    expect(countRegisteredTools(registry, ALL_SERVICES)).toBe(49);
+    expect(registry.length).toBe(48);
+    expect(countRegisteredTools(registry, ALL_SERVICES)).toBe(50);
     expect(countRegisteredTools(registry, ["sheets"])).toBe(registry.length);
   });
 });
@@ -187,8 +187,8 @@ describe("--read-only", () => {
     const dropped = tools
       .filter((t) => t.annotations?.readOnlyHint !== true)
       .map((t) => t.name);
-    // 49 default - 22 read-only = 27 writes, all gone.
-    expect(dropped.length).toBe(27);
+    // 50 default - 22 read-only = 28 writes, all gone.
+    expect(dropped.length).toBe(28);
     for (const name of dropped) {
       expect(roTools.find((t) => t.name === name)).toBeUndefined();
     }
@@ -205,7 +205,7 @@ describe("--read-only", () => {
   });
 
   it("is additive — the default server is unchanged", () => {
-    expect(tools.length).toBe(49);
+    expect(tools.length).toBe(50);
     expect(tools.find((t) => t.name === "gmail_drafts_create")).toBeDefined();
     expect(tools.find((t) => t.name === "drive_files_delete")).toBeDefined();
   });
@@ -230,8 +230,8 @@ describe("idempotentHint / openWorldHint", () => {
       .filter((t) => typeof t.annotations?.openWorldHint !== "boolean")
       .map((t) => t.name);
     expect(missing).toEqual([]);
-    // All 49 reach Google Workspace, whose state changes independently of us.
-    expect(tools.filter((t) => t.annotations?.openWorldHint === true).length).toBe(49);
+    // All 50 reach Google Workspace, whose state changes independently of us.
+    expect(tools.filter((t) => t.annotations?.openWorldHint === true).length).toBe(50);
   });
 
   it("every write advertises idempotentHint, and no read does", () => {
@@ -293,6 +293,7 @@ describe("idempotentHint / openWorldHint", () => {
       "drive_files_copy",
       "drive_files_create",
       "drive_permissions_create",
+      "drive_permissions_transferOwnership",
       "gmail_drafts_create",
       "sheets_batchUpdate",
       "sheets_values_append",
@@ -323,13 +324,13 @@ describe("idempotentHint / openWorldHint", () => {
     });
   });
 
-  it("accounts for all 49 tools", () => {
+  it("accounts for all 50 tools", () => {
     const reads = tools.filter((t) => t.annotations?.readOnlyHint === true).length;
     const idem = tools.filter((t) => t.annotations?.idempotentHint === true).length;
     const nonIdem = tools.filter((t) => t.annotations?.idempotentHint === false).length;
     expect(reads).toBe(22);
-    expect(idem + nonIdem).toBe(49 - reads);
+    expect(idem + nonIdem).toBe(50 - reads);
     expect(idem).toBe(13);
-    expect(nonIdem).toBe(14);
+    expect(nonIdem).toBe(15);
   });
 });
