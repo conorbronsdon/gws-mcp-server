@@ -3,9 +3,21 @@ import { z } from "zod";
 import { isAbsolute } from "node:path";
 import { writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { buildZodSchema, makeTmpFileName } from "../index.js";
-import type { ToolDef } from "../services.js";
+import { SERVICE_TOOLS, type ToolDef } from "../services.js";
 
 describe("buildZodSchema", () => {
+  it("rejects unsupported ownership transfers while accepting non-owner permission roles", () => {
+    const tool = SERVICE_TOOLS.drive.find((t) => t.name === "drive_permissions_update")!;
+    const schema = z.object(buildZodSchema(tool));
+    const args = { fileId: "file123", permissionId: "perm456" };
+    for (const role of ["owner", "writter", "", undefined]) {
+      expect(schema.safeParse({ ...args, role }).success, String(role)).toBe(false);
+    }
+    for (const role of ["organizer", "fileOrganizer", "writer", "commenter", "reader"]) {
+      expect(schema.parse({ ...args, role })).toEqual({ ...args, role });
+    }
+  });
+
   it("maps string params to z.string()", () => {
     const tool: ToolDef = {
       name: "test",

@@ -58,7 +58,7 @@ const byName = (n: string): ListedTool => {
 
 describe("advertised annotations", () => {
   it("registers both hand-written tools alongside the registry tools", () => {
-    expect(tools.length).toBe(47);
+    expect(tools.length).toBe(49);
     expect(byName("drive_files_download")).toBeDefined();
     expect(byName("gmail_drafts_create")).toBeDefined();
   });
@@ -105,7 +105,7 @@ describe("advertised annotations", () => {
     expect(SERVER_VERSION).toBe(pkg.version);
   });
 
-  it("advertises every tool capable of irreversible removal as destructive", () => {
+  it("advertises tools that remove data or capabilities as destructive", () => {
     // tasks_tasks_clear is in this list and is not a *_delete: it permanently
     // removes completed tasks from a list, so it belongs here.
     const destructive = tools
@@ -116,6 +116,8 @@ describe("advertised annotations", () => {
       "calendar_events_delete",
       "docs_batchUpdate",
       "drive_files_delete",
+      "drive_permissions_delete",
+      "drive_permissions_update",
       "sheets_batchUpdate",
       "slides_batchUpdate",
       "tasks_tasklists_delete",
@@ -152,8 +154,8 @@ describe("startup tool count", () => {
     // Guards against the fix being "fudge the string": the number has to come
     // from somewhere other than the registry length.
     const registry = getToolsForServices(ALL_SERVICES);
-    expect(registry.length).toBe(45);
-    expect(countRegisteredTools(registry, ALL_SERVICES)).toBe(47);
+    expect(registry.length).toBe(47);
+    expect(countRegisteredTools(registry, ALL_SERVICES)).toBe(49);
     expect(countRegisteredTools(registry, ["sheets"])).toBe(registry.length);
   });
 });
@@ -185,8 +187,8 @@ describe("--read-only", () => {
     const dropped = tools
       .filter((t) => t.annotations?.readOnlyHint !== true)
       .map((t) => t.name);
-    // 47 default - 22 read-only = 25 writes, all gone.
-    expect(dropped.length).toBe(25);
+    // 49 default - 22 read-only = 27 writes, all gone.
+    expect(dropped.length).toBe(27);
     for (const name of dropped) {
       expect(roTools.find((t) => t.name === name)).toBeUndefined();
     }
@@ -203,7 +205,7 @@ describe("--read-only", () => {
   });
 
   it("is additive — the default server is unchanged", () => {
-    expect(tools.length).toBe(47);
+    expect(tools.length).toBe(49);
     expect(tools.find((t) => t.name === "gmail_drafts_create")).toBeDefined();
     expect(tools.find((t) => t.name === "drive_files_delete")).toBeDefined();
   });
@@ -228,8 +230,8 @@ describe("idempotentHint / openWorldHint", () => {
       .filter((t) => typeof t.annotations?.openWorldHint !== "boolean")
       .map((t) => t.name);
     expect(missing).toEqual([]);
-    // All 47 reach Google Workspace, whose state changes independently of us.
-    expect(tools.filter((t) => t.annotations?.openWorldHint === true).length).toBe(47);
+    // All 49 reach Google Workspace, whose state changes independently of us.
+    expect(tools.filter((t) => t.annotations?.openWorldHint === true).length).toBe(49);
   });
 
   it("every write advertises idempotentHint, and no read does", () => {
@@ -260,6 +262,8 @@ describe("idempotentHint / openWorldHint", () => {
       "calendar_events_delete",
       "drive_files_delete",
       "drive_files_update",
+      "drive_permissions_delete",
+      "drive_permissions_update",
       "gmail_threads_modify",
       "sheets_values_update",
       "tasks_tasklists_delete",
@@ -319,13 +323,13 @@ describe("idempotentHint / openWorldHint", () => {
     });
   });
 
-  it("accounts for all 47 tools", () => {
+  it("accounts for all 49 tools", () => {
     const reads = tools.filter((t) => t.annotations?.readOnlyHint === true).length;
     const idem = tools.filter((t) => t.annotations?.idempotentHint === true).length;
     const nonIdem = tools.filter((t) => t.annotations?.idempotentHint === false).length;
     expect(reads).toBe(22);
-    expect(idem + nonIdem).toBe(47 - reads);
-    expect(idem).toBe(11);
+    expect(idem + nonIdem).toBe(49 - reads);
+    expect(idem).toBe(13);
     expect(nonIdem).toBe(14);
   });
 });

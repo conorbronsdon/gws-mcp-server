@@ -59,7 +59,7 @@ describe("tool definitions integrity", () => {
   });
 
   it("has correct tool counts per service", () => {
-    expect(SERVICE_TOOLS["drive"].length).toBe(9);
+    expect(SERVICE_TOOLS["drive"].length).toBe(11);
     expect(SERVICE_TOOLS["sheets"].length).toBe(5);
     expect(SERVICE_TOOLS["calendar"].length).toBe(6);
     expect(SERVICE_TOOLS["docs"].length).toBe(3);
@@ -68,8 +68,8 @@ describe("tool definitions integrity", () => {
     expect(SERVICE_TOOLS["tasks"].length).toBe(12);
   });
 
-  it("total tool count is 45", () => {
-    expect(allTools.length).toBe(45);
+  it("total tool count is 47", () => {
+    expect(allTools.length).toBe(47);
   });
 
   it("all params have required fields", () => {
@@ -390,6 +390,72 @@ describe("drive_permissions_list (shared drives + grantee fields)", () => {
   });
 });
 
+// ── drive_permissions_update/delete: shared drives ────────────────────────
+// Same silent-failure mode #56 fixed on drive_permissions_list: without
+// defaultParams, supportsAllDrives never reaches the CLI, so these two tools
+// would fail on exactly the shared-drive files the other drive tools already
+// handle. Asserted directly here instead of relying on generic buildArgs
+// coverage, since nothing else pins that *this* tool carries the default.
+
+describe("drive_permissions_update (shared drives)", () => {
+  const tool = SERVICE_TOOLS["drive"].find((t) => t.name === "drive_permissions_update")!;
+
+  it("sends supportsAllDrives without the caller asking, like drive_permissions_list", () => {
+    const args = buildArgs(tool, { fileId: "file123", permissionId: "perm456", role: "writer" });
+    const paramsIdx = args.indexOf("--params");
+    expect(paramsIdx).toBeGreaterThan(-1);
+    // Compare against the same escaping buildArgs applies, so this holds on
+    // Windows (cmd-escaped) as well as Linux/macOS (escapeJsonArg is a no-op).
+    expect(args[paramsIdx + 1]).toBe(
+      escapeJsonArg(JSON.stringify({ supportsAllDrives: true, fileId: "file123", permissionId: "perm456" })),
+    );
+    const jsonIdx = args.indexOf("--json");
+    expect(args[jsonIdx + 1]).toBe(escapeJsonArg(JSON.stringify({ role: "writer" })));
+  });
+
+  it("declares fields as an optional param — undeclared params are discarded", () => {
+    const fields = tool.params.find((p) => p.name === "fields");
+    expect(fields, "drive_permissions_update should declare 'fields'").toBeDefined();
+    expect(fields!.required).toBe(false);
+    expect(fields!.type).toBe("string");
+  });
+
+  it("passes a caller's field mask through alongside the injected default", () => {
+    const args = buildArgs(tool, {
+      fileId: "file123",
+      permissionId: "perm456",
+      fields: "id,role,emailAddress",
+      role: "reader",
+    });
+    const paramsIdx = args.indexOf("--params");
+    expect(args[paramsIdx + 1]).toBe(
+      escapeJsonArg(
+        JSON.stringify({
+          supportsAllDrives: true,
+          fileId: "file123",
+          permissionId: "perm456",
+          fields: "id,role,emailAddress",
+        }),
+      ),
+    );
+  });
+});
+
+describe("drive_permissions_delete (shared drives)", () => {
+  const tool = SERVICE_TOOLS["drive"].find((t) => t.name === "drive_permissions_delete")!;
+
+  it("sends supportsAllDrives without the caller asking, like drive_permissions_list", () => {
+    const args = buildArgs(tool, { fileId: "file123", permissionId: "perm456" });
+    const paramsIdx = args.indexOf("--params");
+    expect(paramsIdx).toBeGreaterThan(-1);
+    expect(args[paramsIdx + 1]).toBe(
+      escapeJsonArg(JSON.stringify({ supportsAllDrives: true, fileId: "file123", permissionId: "perm456" })),
+    );
+    // Delete has no request body — nothing should be sent via --json.
+    expect(args.indexOf("--json")).toBe(-1);
+  });
+});
+
 // ── Tool annotations (issue #5) ──────────────────────────────────────────
 
 describe("buildAnnotations mapping", () => {
@@ -490,6 +556,8 @@ describe("tool annotation classifications", () => {
       "docs_batchUpdate",
       "slides_batchUpdate",
       "sheets_batchUpdate",
+      "drive_permissions_delete",
+      "drive_permissions_update",
       "tasks_tasklists_delete",
       "tasks_tasks_delete",
       "tasks_tasks_clear",
@@ -572,14 +640,14 @@ describe("tool annotation classifications", () => {
     }
   });
 
-  it("classification counts match the intended split (21 read / 8 destructive / 16 additive)", () => {
+  it("classification counts match the intended split (21 read / 10 destructive / 16 additive)", () => {
     const read = allTools.filter((t) => buildAnnotations(t).readOnlyHint === true).length;
     const destructive = allTools.filter((t) => buildAnnotations(t).destructiveHint === true).length;
     const additive = allTools.filter(
       (t) => buildAnnotations(t).readOnlyHint === false && buildAnnotations(t).destructiveHint === false,
     ).length;
     expect(read).toBe(21);
-    expect(destructive).toBe(8);
+    expect(destructive).toBe(10);
     expect(additive).toBe(16);
     expect(read + destructive + additive).toBe(allTools.length);
   });
