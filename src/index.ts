@@ -178,7 +178,7 @@ export const CUSTOM_TOOLS: ReadonlyArray<{ name: string; service: string; readOn
  * Pure builders for the two Drive ownership-transfer flows Google documents
  * separately (developers.google.com/workspace/drive/api/guides/transfer-file):
  * same-organization Workspace transfer (immediate) vs. propose-and-accept
- * (consumer accounts, or cross-organization). role/type/pendingOwner/
+ * (consumer accounts). role/type/pendingOwner/
  * transferOwnership are protocol constants, not tool inputs — there is no
  * `fileId`/`emailAddress`/`opts` path that can reach them. This is the fix
  * for the #60 review finding: the first version declared `pendingOwner` as
@@ -205,10 +205,9 @@ export function buildTransferOwnershipRequest(
 export function buildProposeOwnershipTransferRequest(
   fileId: string,
   emailAddress: string,
-  opts: { moveToNewOwnersRoot?: boolean; fields?: string } = {},
+  opts: { fields?: string } = {},
 ): { params: Record<string, unknown>; body: Record<string, unknown> } {
   const params: Record<string, unknown> = { fileId, supportsAllDrives: true };
-  if (opts.moveToNewOwnersRoot !== undefined) params.moveToNewOwnersRoot = opts.moveToNewOwnersRoot;
   if (opts.fields !== undefined) params.fields = opts.fields;
   return { params, body: { role: "writer", type: "user", pendingOwner: true, emailAddress } };
 }
@@ -575,7 +574,7 @@ export function createServer(
     server.registerTool(
       "drive_permissions_transferOwnership",
       {
-        description: "Immediately transfer ownership of a file to another Google Workspace account in the SAME organization. The current owner is downgraded to writer as soon as this call succeeds — there is no separate acceptance step. Only works for files in \"My Drive\"; not supported for files in a shared drive, since the organization owns those, not an individual. For a personal/consumer Google account or a different organization, use drive_permissions_proposeOwnershipTransfer instead, which requires the recipient's separate acceptance and does not transfer ownership immediately.",
+        description: "Immediately transfer ownership of a file to another Google Workspace account in the SAME organization. The current owner is downgraded to writer as soon as this call succeeds — there is no separate acceptance step — and Google sends the new owner a notification email that cannot be disabled. Only works for files in \"My Drive\"; not supported for files in a shared drive, since the organization owns those, not an individual. For a transfer between personal/consumer Google accounts, use drive_permissions_proposeOwnershipTransfer instead, which requires the recipient's separate acceptance and does not transfer ownership immediately. Google Workspace ownership cannot be transferred to an account outside the organization.",
         inputSchema: {
           fileId: z.string().describe("The file to transfer (must be in \"My Drive\", not a shared drive)"),
           emailAddress: z.string().describe("Email address of the new owner, in the same Workspace organization"),
@@ -615,7 +614,7 @@ export function createServer(
   }
 
   // ── Custom tool: drive_permissions_proposeOwnershipTransfer ───────────
-  // Ownership transfer between consumer accounts, or across organizations
+  // Ownership transfer between consumer accounts
   // (same guide, "Transfer file ownership from one consumer account to
   // another"): a two-step handshake, not a single call. This tool performs
   // only the current owner's half (role=writer + pendingOwner=true, fixed
@@ -627,11 +626,10 @@ export function createServer(
     server.registerTool(
       "drive_permissions_proposeOwnershipTransfer",
       {
-        description: "Propose transferring ownership of a file to another Google account — for a personal/consumer account or a different organization (use drive_permissions_transferOwnership instead for a same-organization Workspace transfer, which completes immediately). This does NOT transfer ownership by itself: it sets role=writer + pendingOwner=true, and the prospective owner must separately accept by setting role=owner + transferOwnership=true on their own permission, under their own credentials. The recipient gets a notification email; nothing changes for the current owner unless and until they accept. Only individual users can be proposed — not groups, domains, or service accounts (service accounts have no Drive storage quota and the transfer will fail).",
+        description: "Propose transferring ownership of a file between personal/consumer Google accounts (use drive_permissions_transferOwnership instead for a same-organization Workspace transfer, which completes immediately). Google Workspace ownership cannot be transferred to an account outside the organization. This does NOT transfer ownership by itself: it sets role=writer + pendingOwner=true, and the prospective owner must separately accept by setting role=owner + transferOwnership=true on their own permission, under their own credentials. Google sends the recipient a notification email that cannot be disabled; nothing changes for the current owner unless and until they accept. Only individual users can be proposed — not groups, domains, or service accounts (service accounts have no Drive storage quota and the transfer will fail). Ownership transfers are not supported for files in shared drives.",
         inputSchema: {
           fileId: z.string().describe("The file to propose transferring"),
           emailAddress: z.string().describe("Email address of the prospective new owner (an individual user)"),
-          moveToNewOwnersRoot: z.boolean().optional().describe("If true and the transfer is later accepted, moves the file to the new owner's My Drive root and removes prior parents"),
           fields: z.string().optional().describe("Fields to return (e.g. \"id,role,type,pendingOwner\")"),
         },
         // Additive: only grants the recipient writer access plus a pending
@@ -644,7 +642,7 @@ export function createServer(
           const { params, body } = buildProposeOwnershipTransferRequest(
             String(args.fileId),
             String(args.emailAddress),
-            { moveToNewOwnersRoot: args.moveToNewOwnersRoot as boolean | undefined, fields: args.fields as string | undefined },
+            { fields: args.fields as string | undefined },
           );
 
           const { stdout } = await spawnGwsRaw(gwsBinary, [

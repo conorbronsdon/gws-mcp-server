@@ -248,7 +248,7 @@ describe("buildTransferOwnershipRequest (same-organization Workspace transfer)",
   });
 });
 
-describe("buildProposeOwnershipTransferRequest (consumer / cross-organization)", () => {
+describe("buildProposeOwnershipTransferRequest (consumer accounts)", () => {
   it("always sends role=writer, type=user, pendingOwner=true — never pendingOwner:false", () => {
     // The exact regression this pins: there is no `pendingOwner` parameter
     // on this function for a caller to set to false in the first place.
@@ -258,15 +258,13 @@ describe("buildProposeOwnershipTransferRequest (consumer / cross-organization)",
     expect(body.pendingOwner).not.toBe(false);
   });
 
-  it("passes moveToNewOwnersRoot and fields through alongside the fixed params", () => {
+  it("passes fields through alongside the fixed params", () => {
     const { params } = buildProposeOwnershipTransferRequest("file123", "newowner@example.com", {
-      moveToNewOwnersRoot: true,
       fields: "id,role,type,pendingOwner",
     });
     expect(params).toEqual({
       fileId: "file123",
       supportsAllDrives: true,
-      moveToNewOwnersRoot: true,
       fields: "id,role,type,pendingOwner",
     });
   });
