@@ -59,7 +59,7 @@ describe("tool definitions integrity", () => {
   });
 
   it("has correct tool counts per service", () => {
-    expect(SERVICE_TOOLS["drive"].length).toBe(12);
+    expect(SERVICE_TOOLS["drive"].length).toBe(11);
     expect(SERVICE_TOOLS["sheets"].length).toBe(5);
     expect(SERVICE_TOOLS["calendar"].length).toBe(6);
     expect(SERVICE_TOOLS["docs"].length).toBe(3);
@@ -68,8 +68,8 @@ describe("tool definitions integrity", () => {
     expect(SERVICE_TOOLS["tasks"].length).toBe(12);
   });
 
-  it("total tool count is 48", () => {
-    expect(allTools.length).toBe(48);
+  it("total tool count is 47", () => {
+    expect(allTools.length).toBe(47);
   });
 
   it("all params have required fields", () => {
@@ -456,93 +456,6 @@ describe("drive_permissions_delete (shared drives)", () => {
   });
 });
 
-// ── drive_permissions_transferOwnership: shared drives + locked fields ────
-// Same shared-drive gap as every other drive_permissions_* tool if
-// defaultParams were ever dropped. role/type/pendingOwner are also
-// effectively fixed values here (the API's two-step ownership handshake only
-// works with role=writer, type=user, pendingOwner=true on this call) - the
-// enum mechanism from #58 gives that real MCP-schema-level enforcement
-// instead of leaving it to the description alone.
-
-describe("drive_permissions_transferOwnership (shared drives + locked role/type)", () => {
-  const tool = SERVICE_TOOLS["drive"].find((t) => t.name === "drive_permissions_transferOwnership")!;
-
-  it("sends supportsAllDrives without the caller asking, like the other drive_permissions_* tools", () => {
-    const args = buildArgs(tool, {
-      fileId: "file123",
-      emailAddress: "newowner@example.com",
-      role: "writer",
-      type: "user",
-      pendingOwner: true,
-    });
-    const paramsIdx = args.indexOf("--params");
-    expect(args[paramsIdx + 1]).toBe(
-      escapeJsonArg(JSON.stringify({ supportsAllDrives: true, fileId: "file123" })),
-    );
-    const jsonIdx = args.indexOf("--json");
-    expect(args[jsonIdx + 1]).toBe(
-      escapeJsonArg(
-        JSON.stringify({
-          emailAddress: "newowner@example.com",
-          role: "writer",
-          type: "user",
-          pendingOwner: true,
-        }),
-      ),
-    );
-  });
-
-  it("constrains role and type to the single values the handshake requires", () => {
-    // Pins the real tool, not just buildZodSchema's enum branch — without
-    // this, the enum could be dropped from the definition and index.test.ts
-    // would still pass on its own synthetic tool.
-    const role = tool.bodyParams!.find((p) => p.name === "role")!;
-    const type = tool.bodyParams!.find((p) => p.name === "type")!;
-    expect(role.enum).toEqual(["writer"]);
-    expect(type.enum).toEqual(["user"]);
-
-    const schema = buildZodSchema(tool);
-    expect(schema.role.safeParse("writer").success).toBe(true);
-    expect(schema.role.safeParse("owner").success).toBe(false);
-    expect(schema.type.safeParse("user").success).toBe(true);
-    expect(schema.type.safeParse("domain").success).toBe(false);
-  });
-
-  it("requires pendingOwner as a real boolean field", () => {
-    const pendingOwner = tool.bodyParams!.find((p) => p.name === "pendingOwner")!;
-    expect(pendingOwner, "should declare 'pendingOwner'").toBeDefined();
-    expect(pendingOwner.required).toBe(true);
-    expect(pendingOwner.type).toBe("boolean");
-  });
-
-  it("passes moveToNewOwnersRoot through alongside the injected default", () => {
-    const args = buildArgs(tool, {
-      fileId: "file123",
-      moveToNewOwnersRoot: true,
-      emailAddress: "newowner@example.com",
-      role: "writer",
-      type: "user",
-      pendingOwner: true,
-    });
-    const paramsIdx = args.indexOf("--params");
-    expect(args[paramsIdx + 1]).toBe(
-      escapeJsonArg(
-        JSON.stringify({ supportsAllDrives: true, fileId: "file123", moveToNewOwnersRoot: true }),
-      ),
-    );
-  });
-
-  it("is not marked destructive — this call only grants the recipient access, it doesn't change the current owner's role", () => {
-    // Judgment call, stated explicitly so it can be argued with: the actual
-    // ownership change (and the current owner's capability loss) only
-    // happens later, via a separate accept call the recipient makes under
-    // their own credentials — not something this call, or this server, does.
-    const a = buildAnnotations(tool);
-    expect(a.readOnlyHint).toBe(false);
-    expect(a.destructiveHint).toBe(false);
-  });
-});
-
 // ── Tool annotations (issue #5) ──────────────────────────────────────────
 
 describe("buildAnnotations mapping", () => {
@@ -675,7 +588,7 @@ describe("tool annotation classifications", () => {
 
   it("additive writes are readOnlyHint:false with an explicit destructiveHint:false", () => {
     const expectAdditive = [
-      "drive_files_create", "drive_files_copy", "drive_files_update", "drive_permissions_create", "drive_permissions_transferOwnership",
+      "drive_files_create", "drive_files_copy", "drive_files_update", "drive_permissions_create",
       "sheets_values_update", "sheets_values_append",
       "calendar_events_insert", "calendar_events_update",
       "docs_create",
@@ -727,7 +640,7 @@ describe("tool annotation classifications", () => {
     }
   });
 
-  it("classification counts match the intended split (21 read / 10 destructive / 17 additive)", () => {
+  it("classification counts match the intended split (21 read / 10 destructive / 16 additive)", () => {
     const read = allTools.filter((t) => buildAnnotations(t).readOnlyHint === true).length;
     const destructive = allTools.filter((t) => buildAnnotations(t).destructiveHint === true).length;
     const additive = allTools.filter(
@@ -735,7 +648,7 @@ describe("tool annotation classifications", () => {
     ).length;
     expect(read).toBe(21);
     expect(destructive).toBe(10);
-    expect(additive).toBe(17);
+    expect(additive).toBe(16);
     expect(read + destructive + additive).toBe(allTools.length);
   });
 });

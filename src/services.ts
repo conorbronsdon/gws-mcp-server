@@ -261,30 +261,6 @@ const driveTools: ToolDef[] = [
     destructive: true,
     idempotent: true,
   },
-  {
-    name: "drive_permissions_transferOwnership",
-    description: "Propose transferring ownership of a file to another user. This does NOT complete the transfer by itself: per the Drive API, the current owner sets role=writer + pendingOwner=true (this call), then the prospective owner must separately accept by setting role=owner + transferOwnership=true on their own permission, under their own credentials — something this server, authenticated as a single account, cannot do on their behalf. The recipient gets a notification email; nothing changes for the current owner unless and until they accept. Only individual users (not groups, domains, or service accounts) can be proposed. Per the Drive API: concurrent permissions operations on the same file aren't supported, only the last update is applied.",
-    command: ["drive", "permissions", "create"],
-    params: [
-      { name: "fileId", description: "The file to transfer", type: "string", required: true },
-      { name: "moveToNewOwnersRoot", description: "If true and the file isn't in a shared drive, moves it to the new owner's My Drive root and removes prior parents once the transfer is accepted", type: "boolean", required: false },
-      { name: "fields", description: "Fields to return (e.g. \"id,role,type,pendingOwner\")", type: "string", required: false },
-    ],
-    bodyParams: [
-      { name: "emailAddress", description: "Email address of the prospective new owner (must be an individual user, not a group)", type: "string", required: true },
-      { name: "role", description: "Must be \"writer\" — ownership itself is only granted once the recipient separately accepts", type: "string", required: true, enum: ["writer"] },
-      { name: "type", description: "Must be \"user\" — ownership can only be proposed to an individual account", type: "string", required: true, enum: ["user"] },
-      { name: "pendingOwner", description: "Must be true — this is what marks the grant as an ownership proposal rather than plain writer access", type: "boolean", required: true },
-    ],
-    defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
-    // Additive, matching drive_permissions_create (the same underlying
-    // command): this call only grants the recipient writer access plus a
-    // pending flag. It does not itself change the current owner's role - that
-    // only happens later, via a separate accept call the recipient makes
-    // under their own credentials. Judgment call: open to reclassifying as
-    // destructive if the eventual, accepted-elsewhere capability loss should
-    // outweigh what this specific call does on its own.
-  },
 ];
 
 // ── Sheets ──────────────────────────────────────────────────────────────

@@ -168,7 +168,50 @@ export const CUSTOM_TOOLS: ReadonlyArray<{ name: string; service: string; readOn
   { name: "drive_files_download", service: "drive", readOnly: true },
   // gmail_drafts_create is a write even though it never sends.
   { name: "gmail_drafts_create", service: "gmail", readOnly: false },
+  { name: "drive_permissions_transferOwnership", service: "drive", readOnly: false },
+  { name: "drive_permissions_proposeOwnershipTransfer", service: "drive", readOnly: false },
 ];
+
+// ── Ownership transfer request builders ────────────────────────────────
+
+/**
+ * Pure builders for the two Drive ownership-transfer flows Google documents
+ * separately (developers.google.com/workspace/drive/api/guides/transfer-file):
+ * same-organization Workspace transfer (immediate) vs. propose-and-accept
+ * (consumer accounts, or cross-organization). role/type/pendingOwner/
+ * transferOwnership are protocol constants, not tool inputs — there is no
+ * `fileId`/`emailAddress`/`opts` path that can reach them. This is the fix
+ * for the #60 review finding: the first version declared `pendingOwner` as
+ * an ordinary boolean ToolDef param, and a caller passing `pendingOwner:
+ * false` got silently granted plain writer access instead of an ownership
+ * proposal, despite the tool's name. Declarative ToolDef params/bodyParams
+ * can only express caller-supplied fields — there's no way to hardcode a
+ * body field without exposing it to the caller — so these two tools are
+ * hand-written, the same escape hatch drive_files_download and
+ * gmail_drafts_create already use for shapes the standard ToolDef can't
+ * express.
+ */
+export function buildTransferOwnershipRequest(
+  fileId: string,
+  emailAddress: string,
+  opts: { moveToNewOwnersRoot?: boolean; fields?: string } = {},
+): { params: Record<string, unknown>; body: Record<string, unknown> } {
+  const params: Record<string, unknown> = { fileId, supportsAllDrives: true, transferOwnership: true };
+  if (opts.moveToNewOwnersRoot !== undefined) params.moveToNewOwnersRoot = opts.moveToNewOwnersRoot;
+  if (opts.fields !== undefined) params.fields = opts.fields;
+  return { params, body: { role: "owner", type: "user", emailAddress } };
+}
+
+export function buildProposeOwnershipTransferRequest(
+  fileId: string,
+  emailAddress: string,
+  opts: { moveToNewOwnersRoot?: boolean; fields?: string } = {},
+): { params: Record<string, unknown>; body: Record<string, unknown> } {
+  const params: Record<string, unknown> = { fileId, supportsAllDrives: true };
+  if (opts.moveToNewOwnersRoot !== undefined) params.moveToNewOwnersRoot = opts.moveToNewOwnersRoot;
+  if (opts.fields !== undefined) params.fields = opts.fields;
+  return { params, body: { role: "writer", type: "user", pendingOwner: true, emailAddress } };
+}
 
 /**
  * How many tools a client will actually see: registry tools plus whichever
@@ -518,6 +561,110 @@ export function createServer(
     );
 
     console.error("[gws-mcp] Registered custom tool: gmail_drafts_create");
+  }
+
+  // ── Custom tool: drive_permissions_transferOwnership ──────────────────
+  // Immediate ownership transfer between two Google Workspace accounts in
+  // the SAME organization (developers.google.com/workspace/drive/api/
+  // guides/transfer-file, "Transfer file ownership to another Google
+  // Workspace account in the same organization"). role/type/
+  // transferOwnership are fixed via buildTransferOwnershipRequest, not
+  // caller inputs. Not supported for shared drive files: the organization
+  // owns those, not an individual, so there's no owner to transfer from.
+  if (services.includes("drive") && !readOnly) {
+    server.registerTool(
+      "drive_permissions_transferOwnership",
+      {
+        description: "Immediately transfer ownership of a file to another Google Workspace account in the SAME organization. The current owner is downgraded to writer as soon as this call succeeds — there is no separate acceptance step. Only works for files in \"My Drive\"; not supported for files in a shared drive, since the organization owns those, not an individual. For a personal/consumer Google account or a different organization, use drive_permissions_proposeOwnershipTransfer instead, which requires the recipient's separate acceptance and does not transfer ownership immediately.",
+        inputSchema: {
+          fileId: z.string().describe("The file to transfer (must be in \"My Drive\", not a shared drive)"),
+          emailAddress: z.string().describe("Email address of the new owner, in the same Workspace organization"),
+          moveToNewOwnersRoot: z.boolean().optional().describe("If true, moves the file to the new owner's My Drive root and removes prior parents"),
+          fields: z.string().optional().describe("Fields to return (e.g. \"id,role,type,emailAddress\")"),
+        },
+        // Destructive: unlike the propose tool, this single call immediately
+        // downgrades the current owner to writer — no separate acceptance.
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+      },
+      async (args) => {
+        try {
+          const { params, body } = buildTransferOwnershipRequest(
+            String(args.fileId),
+            String(args.emailAddress),
+            { moveToNewOwnersRoot: args.moveToNewOwnersRoot as boolean | undefined, fields: args.fields as string | undefined },
+          );
+
+          const { stdout } = await spawnGwsRaw(gwsBinary, [
+            "drive", "permissions", "create",
+            "--params", escapeJsonArg(JSON.stringify(params)),
+            "--json", escapeJsonArg(JSON.stringify(body)),
+          ], 30_000);
+
+          return { content: [{ type: "text" as const, text: stdout || "(empty response)" }] };
+        } catch (err: unknown) {
+          const error = err as { message?: string };
+          return {
+            content: [{ type: "text" as const, text: `Error transferring ownership: ${error.message || "Unknown error"}` }],
+            isError: true,
+          };
+        }
+      },
+    );
+
+    console.error("[gws-mcp] Registered custom tool: drive_permissions_transferOwnership");
+  }
+
+  // ── Custom tool: drive_permissions_proposeOwnershipTransfer ───────────
+  // Ownership transfer between consumer accounts, or across organizations
+  // (same guide, "Transfer file ownership from one consumer account to
+  // another"): a two-step handshake, not a single call. This tool performs
+  // only the current owner's half (role=writer + pendingOwner=true, fixed
+  // via buildProposeOwnershipTransferRequest) — the prospective owner must
+  // separately accept by setting role=owner + transferOwnership=true on
+  // their OWN permission, under their OWN credentials, which this server
+  // (authenticated as a single account) can never do on their behalf.
+  if (services.includes("drive") && !readOnly) {
+    server.registerTool(
+      "drive_permissions_proposeOwnershipTransfer",
+      {
+        description: "Propose transferring ownership of a file to another Google account — for a personal/consumer account or a different organization (use drive_permissions_transferOwnership instead for a same-organization Workspace transfer, which completes immediately). This does NOT transfer ownership by itself: it sets role=writer + pendingOwner=true, and the prospective owner must separately accept by setting role=owner + transferOwnership=true on their own permission, under their own credentials. The recipient gets a notification email; nothing changes for the current owner unless and until they accept. Only individual users can be proposed — not groups, domains, or service accounts (service accounts have no Drive storage quota and the transfer will fail).",
+        inputSchema: {
+          fileId: z.string().describe("The file to propose transferring"),
+          emailAddress: z.string().describe("Email address of the prospective new owner (an individual user)"),
+          moveToNewOwnersRoot: z.boolean().optional().describe("If true and the transfer is later accepted, moves the file to the new owner's My Drive root and removes prior parents"),
+          fields: z.string().optional().describe("Fields to return (e.g. \"id,role,type,pendingOwner\")"),
+        },
+        // Additive: only grants the recipient writer access plus a pending
+        // flag. Does not itself change the current owner's role — that only
+        // happens later, via the recipient's own separate accept call.
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      },
+      async (args) => {
+        try {
+          const { params, body } = buildProposeOwnershipTransferRequest(
+            String(args.fileId),
+            String(args.emailAddress),
+            { moveToNewOwnersRoot: args.moveToNewOwnersRoot as boolean | undefined, fields: args.fields as string | undefined },
+          );
+
+          const { stdout } = await spawnGwsRaw(gwsBinary, [
+            "drive", "permissions", "create",
+            "--params", escapeJsonArg(JSON.stringify(params)),
+            "--json", escapeJsonArg(JSON.stringify(body)),
+          ], 30_000);
+
+          return { content: [{ type: "text" as const, text: stdout || "(empty response)" }] };
+        } catch (err: unknown) {
+          const error = err as { message?: string };
+          return {
+            content: [{ type: "text" as const, text: `Error proposing ownership transfer: ${error.message || "Unknown error"}` }],
+            isError: true,
+          };
+        }
+      },
+    );
+
+    console.error("[gws-mcp] Registered custom tool: drive_permissions_proposeOwnershipTransfer");
   }
 
   return server;
