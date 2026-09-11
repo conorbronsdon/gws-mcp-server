@@ -142,9 +142,9 @@ A service's tool count (headers below) tracks its context cost: dropping `tasks`
 - `drive_files_download` — Download file content (text inline, binary as base64 or saved to a path; Google-native files are exported to a readable format)
 - `drive_permissions_create` — Share files
 - `drive_permissions_list` — List all permissions on a file (audit sharing state, e.g. check for public access)
-- `drive_permissions_update` — Change an existing permission's role (e.g. reader to writer); downgrades remove capabilities. Ownership transfers are not supported.
+- `drive_permissions_update` — Change an existing permission's role (e.g. reader to writer); downgrades remove capabilities. Use the dedicated transfer tools below for ownership changes.
 - `drive_permissions_delete` — Revoke a permission from a file
-- `drive_permissions_transferOwnership` — Immediately transfer ownership to another Google Workspace account in the SAME organization; sends a mandatory notification email; not supported for shared drive files
+- `drive_permissions_transferOwnership` — Immediately transfer ownership to another Google Workspace account in the SAME organization, downgrading the current owner to writer; sends a mandatory notification email; not supported for shared drive files
 - `drive_permissions_proposeOwnershipTransfer` — Propose transferring ownership between personal/consumer accounts; the recipient must separately accept (mandatory email notification), this doesn't transfer it outright
 
 ### `sheets` (5 tools)
