@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { z } from "zod";
 import { isAbsolute } from "node:path";
 import { writeFileSync, existsSync, unlinkSync } from "node:fs";
-import { buildZodSchema, makeTmpFileName } from "../index.js";
+import { buildZodSchema, makeTmpFileName, buildTransferOwnershipRequest, buildProposeOwnershipTransferRequest } from "../index.js";
 import { SERVICE_TOOLS, type ToolDef } from "../services.js";
 
 describe("buildZodSchema", () => {
@@ -197,5 +197,75 @@ describe("makeTmpFileName", () => {
     expect(existsSync(name)).toBe(true);
     unlinkSync(name);
     expect(existsSync(name)).toBe(false);
+  });
+});
+
+// ── Ownership transfer request builders (#60 review fix) ───────────────
+// The first version of drive_permissions_transferOwnership declared
+// pendingOwner as an ordinary ToolDef boolean bodyParam. It required
+// `true`, but nothing enforced that: buildZodSchema mapped it to
+// unconstrained z.boolean(), and buildArgs forwarded whatever the caller
+// sent. A caller passing pendingOwner:false got silently granted plain
+// writer access instead of an ownership proposal, despite the tool's name.
+// The fix isn't a stricter validator — it's that these two functions have
+// no `pendingOwner`/`role`/`type`/`transferOwnership` parameter at all, so
+// there is no code path for a caller-supplied value to reach them. These
+// tests confirm the actual returned request shape, not just that the
+// functions exist.
+
+describe("buildTransferOwnershipRequest (same-organization Workspace transfer)", () => {
+  it("always sends role=owner, type=user, transferOwnership=true, regardless of extra caller-shaped input", () => {
+    const { params, body } = buildTransferOwnershipRequest("file123", "newowner@example.com");
+    expect(params).toEqual({ fileId: "file123", supportsAllDrives: true, transferOwnership: true });
+    expect(body).toEqual({ role: "owner", type: "user", emailAddress: "newowner@example.com" });
+  });
+
+  it("has no parameter through which a caller could set role, type, or transferOwnership", () => {
+    // Structural, not a runtime check: buildTransferOwnershipRequest's own
+    // signature is (fileId, emailAddress, opts) — opts only accepts
+    // moveToNewOwnersRoot/fields. Calling it with an extra field a caller
+    // might try to sneak in has no effect, because the body is built as a
+    // fresh object literal, never a spread of caller input.
+    const sneaky = { moveToNewOwnersRoot: true, role: "writer", type: "domain" } as {
+      moveToNewOwnersRoot?: boolean;
+    };
+    const { body } = buildTransferOwnershipRequest("file123", "newowner@example.com", sneaky);
+    expect(body).toEqual({ role: "owner", type: "user", emailAddress: "newowner@example.com" });
+  });
+
+  it("passes moveToNewOwnersRoot and fields through alongside the fixed params", () => {
+    const { params } = buildTransferOwnershipRequest("file123", "newowner@example.com", {
+      moveToNewOwnersRoot: true,
+      fields: "id,role,type,emailAddress",
+    });
+    expect(params).toEqual({
+      fileId: "file123",
+      supportsAllDrives: true,
+      transferOwnership: true,
+      moveToNewOwnersRoot: true,
+      fields: "id,role,type,emailAddress",
+    });
+  });
+});
+
+describe("buildProposeOwnershipTransferRequest (consumer accounts)", () => {
+  it("always sends role=writer, type=user, pendingOwner=true — never pendingOwner:false", () => {
+    // The exact regression this pins: there is no `pendingOwner` parameter
+    // on this function for a caller to set to false in the first place.
+    const { params, body } = buildProposeOwnershipTransferRequest("file123", "newowner@example.com");
+    expect(params).toEqual({ fileId: "file123", supportsAllDrives: true });
+    expect(body).toEqual({ role: "writer", type: "user", pendingOwner: true, emailAddress: "newowner@example.com" });
+    expect(body.pendingOwner).not.toBe(false);
+  });
+
+  it("passes fields through alongside the fixed params", () => {
+    const { params } = buildProposeOwnershipTransferRequest("file123", "newowner@example.com", {
+      fields: "id,role,type,pendingOwner",
+    });
+    expect(params).toEqual({
+      fileId: "file123",
+      supportsAllDrives: true,
+      fields: "id,role,type,pendingOwner",
+    });
   });
 });
