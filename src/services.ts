@@ -261,6 +261,160 @@ const driveTools: ToolDef[] = [
     destructive: true,
     idempotent: true,
   },
+  // Comments/replies: usable on any Drive file (not just Docs/Sheets/Slides),
+  // since this is the Drive API's comments resource, not the editor APIs'.
+  // Google Workspace editor apps (Docs/Sheets/Slides) treat comments created
+  // here as unanchored regardless of the anchor field — use the Docs/Sheets/
+  // Slides APIs directly for comments that need to visually bind to content
+  // in those editors. Neither comments nor replies support supportsAllDrives
+  // — confirmed absent from every comments.*/replies.* method's parameters,
+  // unlike every other Drive resource here.
+  {
+    name: "drive_comments_list",
+    description: "List comments on a file.",
+    command: ["drive", "comments", "list"],
+    params: [
+      { name: "fileId", description: "The file to list comments for", type: "string", required: true },
+      { name: "includeDeleted", description: "Whether to include deleted comments (they have no content)", type: "boolean", required: false },
+      { name: "pageSize", description: "Max comments to return (default 20)", type: "number", required: false },
+      { name: "pageToken", description: "Page token from a previous call", type: "string", required: false },
+      { name: "startModifiedTime", description: "Only return comments modified at or after this time (RFC 3339)", type: "string", required: false },
+      // The comments resource requires fields on every method except delete —
+      // omitting it is a hard API error here, unlike most Drive resources
+      // where fields only trims the response.
+      { name: "fields", description: "Fields to include (required by the API for this resource, e.g. \"comments(id,content,author,resolved),nextPageToken\")", type: "string", required: true },
+    ],
+    readOnly: true,
+  },
+  {
+    name: "drive_comments_get",
+    description: "Get a single comment on a file.",
+    command: ["drive", "comments", "get"],
+    params: [
+      { name: "fileId", description: "The file the comment belongs to", type: "string", required: true },
+      { name: "commentId", description: "The comment to retrieve", type: "string", required: true },
+      { name: "includeDeleted", description: "Whether to return the comment if it has been deleted (it will have no content)", type: "boolean", required: false },
+      { name: "fields", description: "Fields to include (required by the API for this resource, e.g. \"id,content,author,resolved,replies\")", type: "string", required: true },
+    ],
+    readOnly: true,
+  },
+  {
+    name: "drive_comments_create",
+    description: "Add a comment to a file. Set anchor to bind it to an app-defined region — Drive stores this as an opaque JSON string you define yourself, and does not validate or interpret it. Google Workspace editor apps (Docs/Sheets/Slides) still display comments created this way as unanchored; use the Docs/Sheets/Slides APIs directly if visual anchoring in those editors matters.",
+    command: ["drive", "comments", "create"],
+    params: [
+      { name: "fileId", description: "The file to comment on", type: "string", required: true },
+      { name: "fields", description: "Fields to include in the response (required by the API for this resource, e.g. \"id,content,createdTime\")", type: "string", required: true },
+    ],
+    bodyParams: [
+      { name: "content", description: "Comment text", type: "string", required: true },
+      { name: "anchor", description: "App-defined region JSON string, optional (e.g. '{\"line\":10}')", type: "string", required: false },
+    ],
+  },
+  {
+    name: "drive_comments_update",
+    description: "Change the text of an existing comment. This overwrites the comment's content; the previous text is not retained. Only the comment's own author can update it — the API rejects the request otherwise. The resolved state can't be changed here: see drive_replies_create's action field.",
+    command: ["drive", "comments", "update"],
+    params: [
+      { name: "fileId", description: "The file the comment belongs to", type: "string", required: true },
+      { name: "commentId", description: "The comment to update", type: "string", required: true },
+      { name: "fields", description: "Fields to include in the response (required by the API for this resource, e.g. \"id,content,modifiedTime\")", type: "string", required: true },
+    ],
+    bodyParams: [
+      { name: "content", description: "New comment text", type: "string", required: true },
+    ],
+    // Matches drive_permissions_update/drive_files_update: repeating the
+    // same content leaves the comment in the same end state.
+    destructive: true,
+    idempotent: true,
+  },
+  {
+    name: "drive_comments_delete",
+    description: "Permanently delete a comment. Only the comment's own author can delete it — the API rejects the request otherwise.",
+    command: ["drive", "comments", "delete"],
+    params: [
+      { name: "fileId", description: "The file the comment belongs to", type: "string", required: true },
+      { name: "commentId", description: "The comment to delete", type: "string", required: true },
+    ],
+    destructive: true,
+    idempotent: true,
+  },
+  {
+    name: "drive_replies_list",
+    description: "List replies to a comment.",
+    command: ["drive", "replies", "list"],
+    params: [
+      { name: "fileId", description: "The file the comment belongs to", type: "string", required: true },
+      { name: "commentId", description: "The comment to list replies for", type: "string", required: true },
+      { name: "includeDeleted", description: "Whether to include deleted replies (they have no content)", type: "boolean", required: false },
+      { name: "pageSize", description: "Max replies to return (default 20)", type: "number", required: false },
+      { name: "pageToken", description: "Page token from a previous call", type: "string", required: false },
+      { name: "fields", description: "Fields to include (e.g. \"replies(id,content,action),nextPageToken\")", type: "string", required: false },
+    ],
+    readOnly: true,
+  },
+  {
+    name: "drive_replies_get",
+    description: "Get a single reply to a comment.",
+    command: ["drive", "replies", "get"],
+    params: [
+      { name: "fileId", description: "The file the comment belongs to", type: "string", required: true },
+      { name: "commentId", description: "The parent comment", type: "string", required: true },
+      { name: "replyId", description: "The reply to retrieve", type: "string", required: true },
+      { name: "includeDeleted", description: "Whether to return the reply if it has been deleted (it will have no content)", type: "boolean", required: false },
+      { name: "fields", description: "Fields to include (e.g. \"id,content,action\")", type: "string", required: false },
+    ],
+    readOnly: true,
+  },
+  {
+    name: "drive_replies_create",
+    description: "Add a reply to a comment, or resolve/reopen it — a comment can only be resolved or reopened by posting a reply with action set. content is required unless action is set; combine both to leave closing/reopening text. Setting action changes the parent comment's resolved field, but resolving is advisory only: the API keeps accepting further replies and doesn't hide anything itself, it's on the client to act on resolved being true (e.g. hide or dim the thread).",
+    command: ["drive", "replies", "create"],
+    params: [
+      { name: "fileId", description: "The file the comment belongs to", type: "string", required: true },
+      { name: "commentId", description: "The comment to reply to", type: "string", required: true },
+      { name: "fields", description: "Fields to include (e.g. \"id,content,action\")", type: "string", required: false },
+    ],
+    bodyParams: [
+      { name: "content", description: "Reply text. Required if action is not set", type: "string", required: false },
+      { name: "action", description: "Set to change the parent comment's resolved state instead of (or alongside) replying with text", type: "string", required: false, enum: ["resolve", "reopen"] },
+    ],
+    // Additive: resolving/reopening is a reversible state toggle the API
+    // itself doesn't enforce anything on (no replies are blocked, nothing is
+    // hidden server-side) — matches gmail_threads_modify's TRASH-label
+    // reasoning, not a data-loss operation. Judgment call: open to
+    // reclassifying if that read is wrong.
+  },
+  {
+    name: "drive_replies_update",
+    description: "Change the text of an existing reply. This overwrites the reply's content; the previous text is not retained. Only the reply's own author can update it — the API rejects the request otherwise. Does not support changing action — use drive_replies_create to resolve/reopen.",
+    command: ["drive", "replies", "update"],
+    params: [
+      { name: "fileId", description: "The file the comment belongs to", type: "string", required: true },
+      { name: "commentId", description: "The parent comment", type: "string", required: true },
+      { name: "replyId", description: "The reply to update", type: "string", required: true },
+      { name: "fields", description: "Fields to include (e.g. \"id,content,modifiedTime\")", type: "string", required: false },
+    ],
+    bodyParams: [
+      { name: "content", description: "New reply text", type: "string", required: true },
+    ],
+    // Matches drive_permissions_update/drive_files_update: repeating the
+    // same content leaves the reply in the same end state.
+    destructive: true,
+    idempotent: true,
+  },
+  {
+    name: "drive_replies_delete",
+    description: "Permanently delete a reply. Only the reply's own author can delete it — the API rejects the request otherwise.",
+    command: ["drive", "replies", "delete"],
+    params: [
+      { name: "fileId", description: "The file the comment belongs to", type: "string", required: true },
+      { name: "commentId", description: "The parent comment", type: "string", required: true },
+      { name: "replyId", description: "The reply to delete", type: "string", required: true },
+    ],
+    destructive: true,
+    idempotent: true,
+  },
 ];
 
 // ── Sheets ──────────────────────────────────────────────────────────────

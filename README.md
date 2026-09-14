@@ -2,7 +2,7 @@
 
 # gws-mcp-server
 
-Google Workspace for AI agents: Gmail, Calendar, Drive, Sheets, Docs, Slides, and Tasks as a curated set of 51 [Model Context Protocol](https://modelcontextprotocol.io/) tools, built on the official [Google Workspace CLI (`gws`)](https://github.com/googleworkspace/cli).
+Google Workspace for AI agents: Gmail, Calendar, Drive, Sheets, Docs, Slides, and Tasks as a curated set of 61 [Model Context Protocol](https://modelcontextprotocol.io/) tools, built on the official [Google Workspace CLI (`gws`)](https://github.com/googleworkspace/cli).
 
 [![npm version](https://img.shields.io/npm/v/gws-mcp-server?style=flat-square)](https://www.npmjs.com/package/gws-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
@@ -102,7 +102,7 @@ npm install && npm run build
 
 ### `--read-only`
 
-`--read-only` registers **22 tools** instead of 51. Every tool that writes to Google is left unregistered, so it never appears in `tools/list` and there is nothing for an agent to call — including `gmail_drafts_create`, which is a write even though it never sends. `drive_files_download` stays, since it reads.
+`--read-only` registers **26 tools** instead of 61. Every tool that writes to Google is left unregistered, so it never appears in `tools/list` and there is nothing for an agent to call — including `gmail_drafts_create`, which is a write even though it never sends. `drive_files_download` stays, since it reads.
 
 ```bash
 gws-mcp-server --read-only
@@ -113,7 +113,7 @@ This constrains the **agent, not the credential**. The token on disk keeps whate
 
 ### Trimming context cost
 
-Every registered tool rides along in each conversation: the full registry is roughly 37 KB of `tools/list` payload (~9.5K tokens) that your MCP client loads before anything else happens. The two flags above compose, and dropping whole services you don't use is the cheapest context win there is:
+Every registered tool rides along in each conversation: the full registry is roughly 46 KB of `tools/list` payload (~11.8K tokens) that your MCP client loads before anything else happens. The two flags above compose, and dropping whole services you don't use is the cheapest context win there is:
 
 ```bash
 gws-mcp-server --services calendar                       # calendar assistant: 6 tools
@@ -127,11 +127,11 @@ In `.mcp.json` or `claude_desktop_config.json`, the same trimming is just editin
 "args": ["gws-mcp-server", "--services", "drive,calendar"]
 ```
 
-A service's tool count (headers below) tracks its context cost: dropping `tasks` (12 tools) saves the most, `docs` (3 tools) the least. There is no per-tool exclude flag today — if service granularity is too coarse for your setup, [open an issue](https://github.com/conorbronsdon/gws-mcp-server/issues) describing the split you need.
+A service's tool count (headers below) tracks its context cost: dropping `drive` (24 tools) saves the most, `docs` (3 tools) the least. There is no per-tool exclude flag today — if service granularity is too coarse for your setup, [open an issue](https://github.com/conorbronsdon/gws-mcp-server/issues) describing the split you need.
 
 ## Available services & tools
 
-### `drive` (14 tools)
+### `drive` (24 tools)
 - `drive_files_list` — Search and list files
 - `drive_files_get` — Get file metadata
 - `drive_files_create` — Create files (with optional upload)
@@ -146,6 +146,16 @@ A service's tool count (headers below) tracks its context cost: dropping `tasks`
 - `drive_permissions_delete` — Revoke a permission from a file
 - `drive_permissions_transferOwnership` — Immediately transfer ownership to another Google Workspace account in the SAME organization, downgrading the current owner to writer; sends a mandatory notification email; not supported for shared drive files
 - `drive_permissions_proposeOwnershipTransfer` — Propose transferring ownership between personal/consumer accounts; the recipient must separately accept (mandatory email notification), this doesn't transfer it outright
+- `drive_comments_list` — List comments on a file (works on any Drive file, not just Docs/Sheets/Slides)
+- `drive_comments_get` — Get a single comment
+- `drive_comments_create` — Add a comment, optionally anchored to an app-defined region (Workspace editors still show it as unanchored)
+- `drive_comments_update` — Change a comment's text (author-only)
+- `drive_comments_delete` — Permanently delete a comment (author-only)
+- `drive_replies_list` — List replies to a comment
+- `drive_replies_get` — Get a single reply
+- `drive_replies_create` — Reply to a comment, or resolve/reopen it via the `action` field
+- `drive_replies_update` — Change a reply's text (author-only)
+- `drive_replies_delete` — Permanently delete a reply (author-only)
 
 ### `sheets` (5 tools)
 - `sheets_get` — Get spreadsheet metadata
@@ -198,7 +208,7 @@ A service's tool count (headers below) tracks its context cost: dropping `tasks`
 
 > **Update semantics:** the `*_update` tools (calendar events, tasks, task lists) use the Google API's `patch` verb — they merge the fields you supply and leave the rest untouched. To *clear* an existing value, pass it explicitly (e.g. an empty string) rather than omitting it.
 
-**Total: 51 tools** (vs 200-400 in the old implementation)
+**Total: 61 tools** (vs 200-400 in the old implementation)
 
 ## Adding new tools
 

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { z } from "zod";
 import { getToolsForServices, SERVICE_TOOLS, ALL_SERVICES, buildAnnotations, type ToolDef } from "../services.js";
 import { buildArgs, escapeJsonArg } from "../executor.js";
 import { buildZodSchema } from "../index.js";
@@ -59,7 +60,7 @@ describe("tool definitions integrity", () => {
   });
 
   it("has correct tool counts per service", () => {
-    expect(SERVICE_TOOLS["drive"].length).toBe(11);
+    expect(SERVICE_TOOLS["drive"].length).toBe(21);
     expect(SERVICE_TOOLS["sheets"].length).toBe(5);
     expect(SERVICE_TOOLS["calendar"].length).toBe(6);
     expect(SERVICE_TOOLS["docs"].length).toBe(3);
@@ -68,8 +69,8 @@ describe("tool definitions integrity", () => {
     expect(SERVICE_TOOLS["tasks"].length).toBe(12);
   });
 
-  it("total tool count is 47", () => {
-    expect(allTools.length).toBe(47);
+  it("total tool count is 57", () => {
+    expect(allTools.length).toBe(57);
   });
 
   it("all params have required fields", () => {
@@ -456,6 +457,86 @@ describe("drive_permissions_delete (shared drives)", () => {
   });
 });
 
+// ── Drive comments/replies: fields is mandatory for comments, not replies ──
+// developers.google.com/workspace/drive/api/guides/manage-comments states
+// this explicitly: "For all methods (excluding delete) on the comments
+// resource, you must set the fields system parameter... If you omit the
+// fields parameter, the method returns an error." Confirmed directly against
+// `gws schema drive.comments.*`/`drive.replies.*`: only comments.list/get/
+// create/update carry "Required: The fields parameter must be set" in their
+// description; none of the replies.* methods do. Getting this backwards in
+// either direction is a real, silent functional gap: too strict on replies
+// blocks a valid no-fields call, too loose on comments ships a tool that
+// always 400s unless the caller happens to pass fields anyway.
+
+describe("drive comments tools require fields; drive replies tools don't", () => {
+  const driveByName = new Map(SERVICE_TOOLS["drive"].map((t) => [t.name, t]));
+  const commentsToolsNeedingFields = ["drive_comments_list", "drive_comments_get", "drive_comments_create", "drive_comments_update"];
+  const repliesTools = ["drive_replies_list", "drive_replies_get", "drive_replies_create", "drive_replies_update"];
+
+  it("every comments.* method except delete requires fields", () => {
+    for (const name of commentsToolsNeedingFields) {
+      const tool = driveByName.get(name)!;
+      const fields = tool.params.find((p) => p.name === "fields");
+      expect(fields, `${name} should declare 'fields'`).toBeDefined();
+      expect(fields!.required, `${name}'s fields param should be required`).toBe(true);
+    }
+  });
+
+  it("drive_comments_delete declares no fields param at all — delete has no response body to select fields from", () => {
+    const tool = driveByName.get("drive_comments_delete")!;
+    expect(tool.params.find((p) => p.name === "fields")).toBeUndefined();
+  });
+
+  it("no replies.* method requires fields", () => {
+    for (const name of repliesTools) {
+      const tool = driveByName.get(name)!;
+      const fields = tool.params.find((p) => p.name === "fields");
+      // fields is still offered (useful for trimming the response), just not required.
+      expect(fields, `${name} should declare 'fields'`).toBeDefined();
+      expect(fields!.required, `${name}'s fields param should be optional`).toBe(false);
+    }
+  });
+
+  it("omitting fields on a required-fields comments tool is a schema-level rejection, not a runtime surprise", () => {
+    const tool = driveByName.get("drive_comments_list")!;
+    const schema = z.object(buildZodSchema(tool));
+    expect(schema.safeParse({ fileId: "file123" }).success).toBe(false);
+    expect(schema.safeParse({ fileId: "file123", fields: "comments(id)" }).success).toBe(true);
+  });
+});
+
+describe("drive_replies_create (resolve/reopen)", () => {
+  const tool = SERVICE_TOOLS["drive"].find((t) => t.name === "drive_replies_create")!;
+
+  it("constrains action to resolve/reopen — pins the real tool, not just buildZodSchema's enum branch", () => {
+    const action = tool.bodyParams!.find((p) => p.name === "action")!;
+    expect(action.enum).toEqual(["resolve", "reopen"]);
+
+    const schema = buildZodSchema(tool);
+    expect(schema.action.safeParse("resolve").success).toBe(true);
+    expect(schema.action.safeParse("reopen").success).toBe(true);
+    expect(schema.action.safeParse("close").success).toBe(false);
+    // Optional still holds: a plain text reply with no action is valid.
+    expect(schema.action.safeParse(undefined).success).toBe(true);
+  });
+
+  it("sends action through to the request body, alongside content", () => {
+    const args = buildArgs(tool, { fileId: "file123", commentId: "c1", action: "resolve", content: "done" });
+    const jsonIdx = args.indexOf("--json");
+    expect(args[jsonIdx + 1]).toBe(escapeJsonArg(JSON.stringify({ content: "done", action: "resolve" })));
+  });
+
+  it("is additive, not destructive — resolving/reopening doesn't block replies or hide anything server-side", () => {
+    // Judgment call, stated explicitly so it can be argued with: matches
+    // gmail_threads_modify's TRASH-label reasoning (a reversible state flag),
+    // not a data-loss operation.
+    const a = buildAnnotations(tool);
+    expect(a.readOnlyHint).toBe(false);
+    expect(a.destructiveHint).toBe(false);
+  });
+});
+
 // ── Tool annotations (issue #5) ──────────────────────────────────────────
 
 describe("buildAnnotations mapping", () => {
@@ -558,6 +639,10 @@ describe("tool annotation classifications", () => {
       "sheets_batchUpdate",
       "drive_permissions_delete",
       "drive_permissions_update",
+      "drive_comments_update",
+      "drive_comments_delete",
+      "drive_replies_update",
+      "drive_replies_delete",
       "tasks_tasklists_delete",
       "tasks_tasks_delete",
       "tasks_tasks_clear",
@@ -572,6 +657,7 @@ describe("tool annotation classifications", () => {
   it("named read tools carry readOnlyHint:true", () => {
     const expectReadOnly = [
       "drive_files_list", "drive_files_get", "drive_files_export", "drive_permissions_list",
+      "drive_comments_list", "drive_comments_get", "drive_replies_list", "drive_replies_get",
       "sheets_get", "sheets_values_get",
       "calendar_events_list", "calendar_events_get", "calendar_freebusy_query",
       "docs_get",
@@ -589,6 +675,7 @@ describe("tool annotation classifications", () => {
   it("additive writes are readOnlyHint:false with an explicit destructiveHint:false", () => {
     const expectAdditive = [
       "drive_files_create", "drive_files_copy", "drive_files_update", "drive_permissions_create",
+      "drive_comments_create", "drive_replies_create",
       "sheets_values_update", "sheets_values_append",
       "calendar_events_insert", "calendar_events_update",
       "docs_create",
@@ -640,15 +727,15 @@ describe("tool annotation classifications", () => {
     }
   });
 
-  it("classification counts match the intended split (21 read / 10 destructive / 16 additive)", () => {
+  it("classification counts match the intended split (25 read / 14 destructive / 18 additive)", () => {
     const read = allTools.filter((t) => buildAnnotations(t).readOnlyHint === true).length;
     const destructive = allTools.filter((t) => buildAnnotations(t).destructiveHint === true).length;
     const additive = allTools.filter(
       (t) => buildAnnotations(t).readOnlyHint === false && buildAnnotations(t).destructiveHint === false,
     ).length;
-    expect(read).toBe(21);
-    expect(destructive).toBe(10);
-    expect(additive).toBe(16);
+    expect(read).toBe(25);
+    expect(destructive).toBe(14);
+    expect(additive).toBe(18);
     expect(read + destructive + additive).toBe(allTools.length);
   });
 });
