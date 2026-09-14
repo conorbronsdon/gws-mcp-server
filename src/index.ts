@@ -222,7 +222,7 @@ export function buildProposeOwnershipTransferRequest(
  * real `tools/list` for several service subsets. A count derived from the same
  * data it is meant to check would agree with itself and prove nothing.
  */
-export function countRegisteredTools(tools: ToolDef[], services: string[], readOnly = false): number {
+export function countRegisteredTools(tools: ToolDef[], services: readonly string[], readOnly = false): number {
   return (
     selectTools(tools, readOnly).length +
     CUSTOM_TOOLS.filter((t) => services.includes(t.service) && (!readOnly || t.readOnly)).length
@@ -296,7 +296,7 @@ async function main() {
  */
 export function createServer(
   tools: ToolDef[],
-  services: string[],
+  services: readonly string[],
   gwsBinary: string,
   gwsAvailable: boolean,
   readOnly = false,

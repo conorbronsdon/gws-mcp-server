@@ -18,7 +18,7 @@ import { createServer, countRegisteredTools, SERVER_VERSION } from "../index.js"
 import { getToolsForServices, ALL_SERVICES, DEFAULT_SERVICES } from "../services.js";
 
 /** Drive a real MCP client against an assembled server and return it. */
-async function connect(services: string[], readOnly = false): Promise<Client> {
+async function connect(services: readonly string[], readOnly = false): Promise<Client> {
   const server = createServer(
     getToolsForServices(services),
     services,
@@ -142,7 +142,7 @@ describe("startup tool count", () => {
   // saw 39. `countRegisteredTools` restates createServer's registration guards,
   // so it is only trustworthy if checked against a real tools/list. Subsets
   // matter: the custom tools are gated on drive and gmail individually.
-  const cases: string[][] = [
+  const cases: ReadonlyArray<readonly string[]> = [
     ALL_SERVICES,
     DEFAULT_SERVICES,
     ["drive"],
@@ -174,6 +174,9 @@ describe("startup tool count", () => {
     const listed = (await client.listTools()).tools;
     expect(listed.length).toBe(61);
     expect(listed.some((tool) => tool.name.startsWith("people_"))).toBe(false);
+
+    const readme = readFileSync(new URL("../../README.md", import.meta.url), "utf-8");
+    expect(readme).toContain(`**Total: ${tools.length} supported tools; ${listed.length} enabled by default**`);
   });
 
   it("keeps server.json's default aligned with the runtime default", () => {
@@ -201,6 +204,17 @@ describe("--read-only", () => {
   it("exposes exactly the 29 read-only tools", () => {
     expect(roTools.length).toBe(29);
     expect(countRegisteredTools(getToolsForServices(ALL_SERVICES), ALL_SERVICES, true)).toBe(29);
+  });
+
+  it("exposes 26 tools for the real no-flag --read-only invocation", async () => {
+    const client = await connect(DEFAULT_SERVICES, true);
+    const listed = (await client.listTools()).tools;
+    expect(listed.length).toBe(26);
+    expect(listed.some((tool) => tool.name.startsWith("people_"))).toBe(false);
+
+    const readme = readFileSync(new URL("../../README.md", import.meta.url), "utf-8");
+    expect(readme).toContain(`\`--read-only\` registers **${listed.length} tools** instead of the default 61.`);
+    expect(readme).toContain(`${roTools.length} read-only tools out of ${tools.length} total`);
   });
 
   it("lists no tool that advertises itself as a write", () => {
