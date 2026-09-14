@@ -58,7 +58,7 @@ const byName = (n: string): ListedTool => {
 
 describe("advertised annotations", () => {
   it("registers all four hand-written tools alongside the registry tools", () => {
-    expect(tools.length).toBe(61);
+    expect(tools.length).toBe(67);
     expect(byName("drive_files_download")).toBeDefined();
     expect(byName("gmail_drafts_create")).toBeDefined();
     expect(byName("drive_permissions_transferOwnership")).toBeDefined();
@@ -125,6 +125,8 @@ describe("advertised annotations", () => {
       "drive_permissions_update",
       "drive_replies_delete",
       "drive_replies_update",
+      "people_people_deleteContact",
+      "people_people_updateContact",
       "sheets_batchUpdate",
       "slides_batchUpdate",
       "tasks_tasklists_delete",
@@ -161,8 +163,8 @@ describe("startup tool count", () => {
     // Guards against the fix being "fudge the string": the number has to come
     // from somewhere other than the registry length.
     const registry = getToolsForServices(ALL_SERVICES);
-    expect(registry.length).toBe(57);
-    expect(countRegisteredTools(registry, ALL_SERVICES)).toBe(61);
+    expect(registry.length).toBe(63);
+    expect(countRegisteredTools(registry, ALL_SERVICES)).toBe(67);
     expect(countRegisteredTools(registry, ["sheets"])).toBe(registry.length);
   });
 });
@@ -180,9 +182,9 @@ describe("--read-only", () => {
     roTools = (await client.listTools()).tools as ListedTool[];
   });
 
-  it("exposes exactly the 26 read-only tools", () => {
-    expect(roTools.length).toBe(26);
-    expect(countRegisteredTools(getToolsForServices(ALL_SERVICES), ALL_SERVICES, true)).toBe(26);
+  it("exposes exactly the 29 read-only tools", () => {
+    expect(roTools.length).toBe(29);
+    expect(countRegisteredTools(getToolsForServices(ALL_SERVICES), ALL_SERVICES, true)).toBe(29);
   });
 
   it("lists no tool that advertises itself as a write", () => {
@@ -194,8 +196,8 @@ describe("--read-only", () => {
     const dropped = tools
       .filter((t) => t.annotations?.readOnlyHint !== true)
       .map((t) => t.name);
-    // 61 default - 26 read-only = 35 writes, all gone.
-    expect(dropped.length).toBe(35);
+    // 67 default - 29 read-only = 38 writes, all gone.
+    expect(dropped.length).toBe(38);
     for (const name of dropped) {
       expect(roTools.find((t) => t.name === name)).toBeUndefined();
     }
@@ -212,7 +214,7 @@ describe("--read-only", () => {
   });
 
   it("is additive — the default server is unchanged", () => {
-    expect(tools.length).toBe(61);
+    expect(tools.length).toBe(67);
     expect(tools.find((t) => t.name === "gmail_drafts_create")).toBeDefined();
     expect(tools.find((t) => t.name === "drive_files_delete")).toBeDefined();
   });
@@ -237,8 +239,8 @@ describe("idempotentHint / openWorldHint", () => {
       .filter((t) => typeof t.annotations?.openWorldHint !== "boolean")
       .map((t) => t.name);
     expect(missing).toEqual([]);
-    // All 61 reach Google Workspace, whose state changes independently of us.
-    expect(tools.filter((t) => t.annotations?.openWorldHint === true).length).toBe(61);
+    // All 67 reach Google Workspace, whose state changes independently of us.
+    expect(tools.filter((t) => t.annotations?.openWorldHint === true).length).toBe(67);
   });
 
   it("every write advertises idempotentHint, and no read does", () => {
@@ -276,6 +278,8 @@ describe("idempotentHint / openWorldHint", () => {
       "drive_replies_delete",
       "drive_replies_update",
       "gmail_threads_modify",
+      "people_people_deleteContact",
+      "people_people_updateContact",
       "sheets_values_update",
       "tasks_tasklists_delete",
       "tasks_tasklists_update",
@@ -309,6 +313,7 @@ describe("idempotentHint / openWorldHint", () => {
       "drive_permissions_transferOwnership",
       "drive_replies_create",
       "gmail_drafts_create",
+      "people_people_createContact",
       "sheets_batchUpdate",
       "sheets_values_append",
       "slides_batchUpdate",
@@ -350,13 +355,13 @@ describe("idempotentHint / openWorldHint", () => {
     });
   });
 
-  it("accounts for all 61 tools", () => {
+  it("accounts for all 67 tools", () => {
     const reads = tools.filter((t) => t.annotations?.readOnlyHint === true).length;
     const idem = tools.filter((t) => t.annotations?.idempotentHint === true).length;
     const nonIdem = tools.filter((t) => t.annotations?.idempotentHint === false).length;
-    expect(reads).toBe(26);
-    expect(idem + nonIdem).toBe(61 - reads);
-    expect(idem).toBe(17);
-    expect(nonIdem).toBe(18);
+    expect(reads).toBe(29);
+    expect(idem + nonIdem).toBe(67 - reads);
+    expect(idem).toBe(19);
+    expect(nonIdem).toBe(19);
   });
 });

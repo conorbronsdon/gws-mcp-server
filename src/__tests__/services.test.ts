@@ -67,10 +67,11 @@ describe("tool definitions integrity", () => {
     expect(SERVICE_TOOLS["slides"].length).toBe(5);
     expect(SERVICE_TOOLS["gmail"].length).toBe(5);
     expect(SERVICE_TOOLS["tasks"].length).toBe(12);
+    expect(SERVICE_TOOLS["people"].length).toBe(6);
   });
 
-  it("total tool count is 57", () => {
-    expect(allTools.length).toBe(57);
+  it("total tool count is 63", () => {
+    expect(allTools.length).toBe(63);
   });
 
   it("all params have required fields", () => {
@@ -537,6 +538,178 @@ describe("drive_replies_create (resolve/reopen)", () => {
   });
 });
 
+// ── People (Contacts): field masks required despite the schema flag ──────
+// The People API's own Discovery schema marks personFields/readMask/
+// updatePersonFields as required:false, but their *description* text says
+// "Required," and people.people.get's method description states outright
+// "The request returns a 400 error if 'personFields' is not specified" —
+// confirmed live. Same asymmetry lesson as #61's Drive comments fields
+// requirement, encoded differently in this API's schema: trust the prose,
+// not just the machine-readable flag.
+
+describe("people field masks are required despite the schema's own required:false flag", () => {
+  const peopleByName = new Map(SERVICE_TOOLS["people"].map((t) => [t.name, t]));
+
+  it("people_people_get requires personFields", () => {
+    const tool = peopleByName.get("people_people_get")!;
+    const personFields = tool.params.find((p) => p.name === "personFields")!;
+    expect(personFields.required).toBe(true);
+  });
+
+  it("people_people_searchContacts requires readMask", () => {
+    const tool = peopleByName.get("people_people_searchContacts")!;
+    const readMask = tool.params.find((p) => p.name === "readMask")!;
+    expect(readMask.required).toBe(true);
+  });
+
+  it("people_people_updateContact requires updatePersonFields but not personFields (response-shaping only)", () => {
+    const tool = peopleByName.get("people_people_updateContact")!;
+    const updatePersonFields = tool.params.find((p) => p.name === "updatePersonFields")!;
+    expect(updatePersonFields.required).toBe(true);
+  });
+
+  it("people_connections_list requires personFields", () => {
+    const tool = peopleByName.get("people_connections_list")!;
+    const personFields = tool.params.find((p) => p.name === "personFields")!;
+    expect(personFields.required).toBe(true);
+  });
+
+  it("people_people_createContact's personFields is genuinely optional — it only shapes the response, not what's written", () => {
+    const tool = peopleByName.get("people_people_createContact")!;
+    const personFields = tool.params.find((p) => p.name === "personFields")!;
+    expect(personFields.required).toBe(false);
+  });
+
+  it("omitting personFields on people_people_get is a schema-level rejection", () => {
+    const tool = peopleByName.get("people_people_get")!;
+    const schema = z.object(buildZodSchema(tool));
+    expect(schema.safeParse({ resourceName: "people/me" }).success).toBe(false);
+    expect(schema.safeParse({ resourceName: "people/me", personFields: "names" }).success).toBe(true);
+  });
+});
+
+describe("people_connections_list (locked resourceName + sortOrder)", () => {
+  const tool = SERVICE_TOOLS["people"].find((t) => t.name === "people_connections_list")!;
+
+  it("constrains resourceName to people/me — pins the real tool, not just buildZodSchema's enum branch", () => {
+    const resourceName = tool.params.find((p) => p.name === "resourceName")!;
+    expect(resourceName.enum).toEqual(["people/me"]);
+
+    const schema = buildZodSchema(tool);
+    expect(schema.resourceName.safeParse("people/me").success).toBe(true);
+    expect(schema.resourceName.safeParse("people/c12345").success).toBe(false);
+  });
+
+  it("constrains sortOrder to the four real values Google documents", () => {
+    const sortOrder = tool.params.find((p) => p.name === "sortOrder")!;
+    expect(sortOrder.enum).toEqual([
+      "LAST_MODIFIED_ASCENDING",
+      "LAST_MODIFIED_DESCENDING",
+      "FIRST_NAME_ASCENDING",
+      "LAST_NAME_ASCENDING",
+    ]);
+
+    const schema = buildZodSchema(tool);
+    expect(schema.sortOrder.safeParse("FIRST_NAME_ASCENDING").success).toBe(true);
+    expect(schema.sortOrder.safeParse("RANDOM").success).toBe(false);
+    // Optional still holds.
+    expect(schema.sortOrder.safeParse(undefined).success).toBe(true);
+  });
+
+  it("sends the locked resourceName and personFields through buildArgs", () => {
+    const args = buildArgs(tool, { resourceName: "people/me", personFields: "names,emailAddresses" });
+    const paramsIdx = args.indexOf("--params");
+    expect(args[paramsIdx + 1]).toBe(
+      escapeJsonArg(JSON.stringify({ resourceName: "people/me", personFields: "names,emailAddresses" })),
+    );
+  });
+
+  it("routes to gws people people connections list (4 segments) — connections is nested under people, not top-level", () => {
+    // Live-verified bug: `gws people connections list` doesn't exist at all
+    // ("unrecognized subcommand 'connections'") — `gws people --help` only
+    // lists contactGroups/otherContacts/people as top-level resources.
+    // connections is a sub-resource of `people people`, confirmed via
+    // `gws people people --help`.
+    expect(tool.command).toEqual(["people", "people", "connections", "list"]);
+  });
+});
+
+// ── createContact/updateContact: no "person" wrapper ──────────────────────
+// Live-verified bug: the original design declared a single `person`
+// bodyParam holding the whole Person object as a JSON string. buildArgs
+// nests every bodyParam under its own name, so that produced
+// `--json '{"person": {...}}'` — the real API rejects this outright
+// ("person: Unknown property. Valid properties: [...]"), because Person
+// fields belong directly at the body's top level, with no wrapper key.
+// Fixed by declaring each writable field (names/emailAddresses/
+// phoneNumbers/organizations/etag) as its own bodyParam, so buildArgs nests
+// each one under its own real top-level API field name instead of one
+// synthetic "person" container.
+
+describe("people_people_createContact / updateContact have no person wrapper", () => {
+  it("createContact sends Person fields directly at the body's top level", () => {
+    const tool = SERVICE_TOOLS["people"].find((t) => t.name === "people_people_createContact")!;
+    const args = buildArgs(tool, {
+      names: '[{"givenName":"Jane"}]',
+      emailAddresses: '[{"value":"jane@example.com"}]',
+    });
+    const jsonIdx = args.indexOf("--json");
+    expect(args[jsonIdx + 1]).toBe(
+      escapeJsonArg(
+        JSON.stringify({ names: [{ givenName: "Jane" }], emailAddresses: [{ value: "jane@example.com" }] }),
+      ),
+    );
+    // The regression this pins: no "person" key anywhere in the body.
+    expect(args[jsonIdx + 1]).not.toContain("\"person\"");
+  });
+
+  it("updateContact sends etag and Person fields directly at the body's top level", () => {
+    const tool = SERVICE_TOOLS["people"].find((t) => t.name === "people_people_updateContact")!;
+    const args = buildArgs(tool, {
+      resourceName: "people/c1",
+      updatePersonFields: "names",
+      etag: "abc123",
+      names: '[{"givenName":"Jane"}]',
+    });
+    const jsonIdx = args.indexOf("--json");
+    expect(args[jsonIdx + 1]).toBe(
+      escapeJsonArg(JSON.stringify({ etag: "abc123", names: [{ givenName: "Jane" }] })),
+    );
+    expect(args[jsonIdx + 1]).not.toContain("\"person\"");
+  });
+
+  it("updateContact requires etag as its own bodyParam", () => {
+    const tool = SERVICE_TOOLS["people"].find((t) => t.name === "people_people_updateContact")!;
+    const etag = tool.bodyParams!.find((p) => p.name === "etag")!;
+    expect(etag, "should declare 'etag'").toBeDefined();
+    expect(etag.required).toBe(true);
+  });
+});
+
+describe("people_people_updateContact / deleteContact classification", () => {
+  it("updateContact matches drive_permissions_update/drive_files_update: destructive AND idempotent", () => {
+    const tool = SERVICE_TOOLS["people"].find((t) => t.name === "people_people_updateContact")!;
+    const a = buildAnnotations(tool);
+    expect(a.destructiveHint).toBe(true);
+    expect(a.idempotentHint).toBe(true);
+  });
+
+  it("deleteContact matches drive_files_delete/drive_comments_delete: destructive AND idempotent", () => {
+    const tool = SERVICE_TOOLS["people"].find((t) => t.name === "people_people_deleteContact")!;
+    const a = buildAnnotations(tool);
+    expect(a.destructiveHint).toBe(true);
+    expect(a.idempotentHint).toBe(true);
+  });
+
+  it("createContact is additive and non-idempotent, like every other *_create tool", () => {
+    const tool = SERVICE_TOOLS["people"].find((t) => t.name === "people_people_createContact")!;
+    const a = buildAnnotations(tool);
+    expect(a.readOnlyHint).toBe(false);
+    expect(a.destructiveHint).toBe(false);
+    expect(a.idempotentHint).toBe(false);
+  });
+});
+
 // ── Tool annotations (issue #5) ──────────────────────────────────────────
 
 describe("buildAnnotations mapping", () => {
@@ -727,15 +900,15 @@ describe("tool annotation classifications", () => {
     }
   });
 
-  it("classification counts match the intended split (25 read / 14 destructive / 18 additive)", () => {
+  it("classification counts match the intended split (28 read / 16 destructive / 19 additive)", () => {
     const read = allTools.filter((t) => buildAnnotations(t).readOnlyHint === true).length;
     const destructive = allTools.filter((t) => buildAnnotations(t).destructiveHint === true).length;
     const additive = allTools.filter(
       (t) => buildAnnotations(t).readOnlyHint === false && buildAnnotations(t).destructiveHint === false,
     ).length;
-    expect(read).toBe(25);
-    expect(destructive).toBe(14);
-    expect(additive).toBe(18);
+    expect(read).toBe(28);
+    expect(destructive).toBe(16);
+    expect(additive).toBe(19);
     expect(read + destructive + additive).toBe(allTools.length);
   });
 });

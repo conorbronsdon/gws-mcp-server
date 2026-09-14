@@ -2,7 +2,7 @@
 
 # gws-mcp-server
 
-Google Workspace for AI agents: Gmail, Calendar, Drive, Sheets, Docs, Slides, and Tasks as a curated set of 61 [Model Context Protocol](https://modelcontextprotocol.io/) tools, built on the official [Google Workspace CLI (`gws`)](https://github.com/googleworkspace/cli).
+Google Workspace for AI agents: Gmail, Calendar, Drive, Sheets, Docs, Slides, Tasks, and Contacts as a curated set of 67 [Model Context Protocol](https://modelcontextprotocol.io/) tools, built on the official [Google Workspace CLI (`gws`)](https://github.com/googleworkspace/cli).
 
 [![npm version](https://img.shields.io/npm/v/gws-mcp-server?style=flat-square)](https://www.npmjs.com/package/gws-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
@@ -46,6 +46,18 @@ gws auth login --readonly    # read-only across services
 
 **On Linux there is no keyring, and the encryption key is a file next to the data it encrypts.** `gws` enables the `keyring` crate's native backends only for macOS and Windows; on every other platform the dependency is declared with no backend feature, so the store falls through to writing `.encryption_key` into `~/.config/gws/`. That file is not a backup of a key held elsewhere — it is the key, and the credential store's own doc comment says it is never deleted. Setting `GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file` changes nothing there because that is already the only path. On macOS and Windows the key file is removed once the OS keyring holds the key. **If you run this headless on Linux, treat `~/.config/gws/` as a password file: anyone who can read the directory has the credentials.**
 
+### Contacts needs a scope outside the default grant
+
+The `people_*` tools need the `contacts` scope, which the default `gws auth login` (and the seven-scope grant described above) does not request. Run `gws auth login -s people` once to add it — `gws`'s scope picker resolves the correct People API scopes automatically for any named service, no code change needed on the `gws` side.
+
+The People API must also be enabled on your own GCP project — a one-time step separate from OAuth, since a new scope grant doesn't enable a new API by itself:
+
+```bash
+gcloud services enable people.googleapis.com --project=<your-project-id>
+```
+
+Without both steps, `people_*` tools fail: a missing scope surfaces as a 401/403 from Google, and a disabled API surfaces as a distinct 403 naming the API and a console link to enable it.
+
 ## Quick start
 
 ```bash
@@ -69,7 +81,7 @@ npm install && npm run build
       "command": "npx",
       "args": [
         "gws-mcp-server",
-        "--services", "drive,sheets,calendar,docs,slides,gmail,tasks"
+        "--services", "drive,sheets,calendar,docs,slides,gmail,tasks,people"
       ]
     }
   }
@@ -102,7 +114,7 @@ npm install && npm run build
 
 ### `--read-only`
 
-`--read-only` registers **26 tools** instead of 61. Every tool that writes to Google is left unregistered, so it never appears in `tools/list` and there is nothing for an agent to call — including `gmail_drafts_create`, which is a write even though it never sends. `drive_files_download` stays, since it reads.
+`--read-only` registers **29 tools** instead of 67. Every tool that writes to Google is left unregistered, so it never appears in `tools/list` and there is nothing for an agent to call — including `gmail_drafts_create`, which is a write even though it never sends. `drive_files_download` stays, since it reads.
 
 ```bash
 gws-mcp-server --read-only
@@ -113,7 +125,7 @@ This constrains the **agent, not the credential**. The token on disk keeps whate
 
 ### Trimming context cost
 
-Every registered tool rides along in each conversation: the full registry is roughly 46 KB of `tools/list` payload (~11.8K tokens) that your MCP client loads before anything else happens. The two flags above compose, and dropping whole services you don't use is the cheapest context win there is:
+Every registered tool rides along in each conversation: the full registry is roughly 52 KB of `tools/list` payload (~13.2K tokens) that your MCP client loads before anything else happens. The two flags above compose, and dropping whole services you don't use is the cheapest context win there is:
 
 ```bash
 gws-mcp-server --services calendar                       # calendar assistant: 6 tools
@@ -206,9 +218,18 @@ A service's tool count (headers below) tracks its context cost: dropping `drive`
 - `tasks_tasks_delete` — Delete a task
 - `tasks_tasks_clear` — Hide all completed tasks in a list
 
+### `people` (6 tools)
+Needs the `contacts` scope and an enabled People API — see [Contacts needs a scope outside the default grant](#contacts-needs-a-scope-outside-the-default-grant).
+- `people_people_get` — Get a contact by resource name (or `people/me` for the authenticated user)
+- `people_people_searchContacts` — Search contacts by name, email, phone, or organization
+- `people_people_createContact` — Create a new contact
+- `people_people_updateContact` — Update a contact (requires the current etag in the request body)
+- `people_people_deleteContact` — Permanently delete a contact
+- `people_connections_list` — List the authenticated user's contacts
+
 > **Update semantics:** the `*_update` tools (calendar events, tasks, task lists) use the Google API's `patch` verb — they merge the fields you supply and leave the rest untouched. To *clear* an existing value, pass it explicitly (e.g. an empty string) rather than omitting it.
 
-**Total: 61 tools** (vs 200-400 in the old implementation)
+**Total: 67 tools** (vs 200-400 in the old implementation)
 
 ## Adding new tools
 
@@ -281,7 +302,7 @@ These are separate credential families, not one login: Workspace authenticates w
 
 ## About
 
-Built and maintained by [Conor Bronsdon](https://github.com/conorbronsdon). I host the [Chain of Thought](https://chainofthought.show/?utm_source=github&utm_medium=referral&utm_campaign=repo-readme&utm_content=gws-mcp-server) podcast, which covers AI infrastructure, developer tools, and how practitioners actually use this stuff. I built this to give the agent workflows that run the show safe, curated access to Gmail, Calendar, Drive, Sheets, Docs, Slides, and Tasks.
+Built and maintained by [Conor Bronsdon](https://github.com/conorbronsdon). I host the [Chain of Thought](https://chainofthought.show/?utm_source=github&utm_medium=referral&utm_campaign=repo-readme&utm_content=gws-mcp-server) podcast, which covers AI infrastructure, developer tools, and how practitioners actually use this stuff. I built this to give the agent workflows that run the show safe, curated access to Gmail, Calendar, Drive, Sheets, Docs, Slides, Tasks, and Contacts.
 
 <a href="https://glama.ai/mcp/servers/conorbronsdon/gws-mcp-server">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/conorbronsdon/gws-mcp-server/badge" alt="gws-mcp-server MCP server" />

@@ -897,6 +897,110 @@ const tasksTools: ToolDef[] = [
   },
 ];
 
+// ── People (Contacts) ─────────────────────────────────────────────────
+// Curated subset of the People API: single-contact lifecycle only. Batch
+// create/update/delete and contact-group management are deliberately
+// deferred — narrower registry weight for a first pass, matching this
+// repo's own demonstrated skepticism toward tools that add weight for
+// marginal value (issues #32/#36/#45).
+//
+// Needs a scope this server's default gws auth login doesn't request:
+// run `gws auth login -s people` once before using these tools (README
+// documents this). Not something this service can detect or prompt for
+// itself — the tool just errors with an auth/permission failure until
+// the scope is granted.
+//
+// personFields/readMask/updatePersonFields are declared required:true
+// despite the People API's own Discovery schema marking them
+// required:false — verified against the schema's own *description* text
+// instead of trusting the flag: `people.people.get`'s method description
+// states outright "The request returns a 400 error if 'personFields' is
+// not specified," and the parameter descriptions for all three say
+// "Required." Same asymmetry lesson as #61's Drive comments fields
+// requirement, encoded differently in this API's schema.
+const peopleTools: ToolDef[] = [
+  {
+    name: "people_people_get",
+    description: "Get a contact by resource name (e.g. \"people/c12345\") or \"people/me\" for the authenticated user's own profile.",
+    command: ["people", "people", "get"],
+    params: [
+      { name: "resourceName", description: "Resource name of the contact, e.g. \"people/c12345\" or \"people/me\"", type: "string", required: true },
+      { name: "personFields", description: "Comma-separated field mask (required by the API — omitting it is a 400 error). Valid values: addresses, ageRanges, biographies, birthdays, calendarUrls, clientData, coverPhotos, emailAddresses, events, externalIds, genders, imClients, interests, locales, locations, memberships, metadata, miscKeywords, names, nicknames, occupations, organizations, phoneNumbers, photos, relations, sipAddresses, skills, urls, userDefined", type: "string", required: true },
+    ],
+    readOnly: true,
+  },
+  {
+    name: "people_people_searchContacts",
+    description: "Search the authenticated user's contacts by name, nickname, email, phone number, or organization. Google's own docs recommend a warmup call with an empty query first to prime the search cache — a search run cold may return incomplete results.",
+    command: ["people", "people", "searchContacts"],
+    params: [
+      { name: "query", description: "Plain-text search query, matched as a prefix against name/nickname/email/phone/organization fields", type: "string", required: true },
+      { name: "readMask", description: "Comma-separated field mask for results (required by the API, same valid values as people_people_get's personFields)", type: "string", required: true },
+      { name: "pageSize", description: "Max results to return (values above 30 are capped to 30; default 10)", type: "number", required: false },
+    ],
+    readOnly: true,
+  },
+  {
+    name: "people_people_createContact",
+    description: "Create a new contact. The Person fields go directly at the top level of the request body — there is no wrapping \"person\" key, unlike some other Google APIs. names/biographies/birthdays/genders are singleton fields for contact sources — the API rejects more than one entry in each of those arrays. Provide at least one of names/emailAddresses/phoneNumbers/organizations. See `gws schema people.people.createContact --resolve-refs` for the full Person resource shape.",
+    command: ["people", "people", "createContact"],
+    params: [
+      { name: "personFields", description: "Field mask for the returned Person (optional — defaults to all fields)", type: "string", required: false },
+    ],
+    bodyParams: [
+      { name: "names", description: "Array of Name objects as JSON string, e.g. '[{\"givenName\":\"Jane\",\"familyName\":\"Doe\"}]' — singleton for contact sources, at most one entry", type: "string", required: false },
+      { name: "emailAddresses", description: "Array of EmailAddress objects as JSON string, e.g. '[{\"value\":\"jane@example.com\"}]'", type: "string", required: false },
+      { name: "phoneNumbers", description: "Array of PhoneNumber objects as JSON string, e.g. '[{\"value\":\"+1 555-0100\"}]'", type: "string", required: false },
+      { name: "organizations", description: "Array of Organization objects as JSON string, e.g. '[{\"name\":\"Example Co\",\"title\":\"Engineer\"}]'", type: "string", required: false },
+    ],
+  },
+  {
+    name: "people_people_updateContact",
+    description: "Update an existing contact. The Person fields go directly at the top level of the request body — there is no wrapping \"person\" key, unlike some other Google APIs. Requires the contact's current etag (fetch via people_people_get first) — the API rejects the update with a 400 failedPrecondition if the etag is stale or missing, since it's used for optimistic-concurrency conflict detection. updatePersonFields controls which top-level fields are replaced; anything outside that mask is left untouched even if also supplied in the body.",
+    command: ["people", "people", "updateContact"],
+    params: [
+      { name: "resourceName", description: "Resource name of the contact, e.g. \"people/c12345\"", type: "string", required: true },
+      { name: "updatePersonFields", description: "Comma-separated field mask of which fields to update (required by the API)", type: "string", required: true },
+    ],
+    bodyParams: [
+      { name: "etag", description: "The contact's current etag, from people_people_get or people_people_createContact's response — required for conflict detection", type: "string", required: true },
+      { name: "names", description: "Array of Name objects as JSON string — singleton for contact sources, at most one entry", type: "string", required: false },
+      { name: "emailAddresses", description: "Array of EmailAddress objects as JSON string", type: "string", required: false },
+      { name: "phoneNumbers", description: "Array of PhoneNumber objects as JSON string", type: "string", required: false },
+      { name: "organizations", description: "Array of Organization objects as JSON string", type: "string", required: false },
+    ],
+    // Matches drive_permissions_update/drive_files_update: repeating the
+    // same update leaves the contact in the same end state. destructive
+    // because replacing e.g. emailAddresses/phoneNumbers wholesale removes
+    // whatever was there before, not just an additive change.
+    destructive: true,
+    idempotent: true,
+  },
+  {
+    name: "people_people_deleteContact",
+    description: "Permanently delete a contact. Only affects contact data — any linked non-contact data (such as a Google Account profile for that person) is not deleted.",
+    command: ["people", "people", "deleteContact"],
+    params: [
+      { name: "resourceName", description: "Resource name of the contact to delete", type: "string", required: true },
+    ],
+    destructive: true,
+    idempotent: true,
+  },
+  {
+    name: "people_connections_list",
+    description: "List the authenticated user's contacts.",
+    command: ["people", "people", "connections", "list"],
+    params: [
+      { name: "resourceName", description: "Only \"people/me\" is valid for this method", type: "string", required: true, enum: ["people/me"] },
+      { name: "personFields", description: "Comma-separated field mask for results (required by the API, same valid values as people_people_get's personFields)", type: "string", required: true },
+      { name: "pageSize", description: "Max results to return (1-1000, default 100)", type: "number", required: false },
+      { name: "pageToken", description: "Page token from a previous call", type: "string", required: false },
+      { name: "sortOrder", description: "Sort order for results", type: "string", required: false, enum: ["LAST_MODIFIED_ASCENDING", "LAST_MODIFIED_DESCENDING", "FIRST_NAME_ASCENDING", "LAST_NAME_ASCENDING"] },
+    ],
+    readOnly: true,
+  },
+];
+
 // ── Service registry ───────────────────────────────────────────────────
 
 export const SERVICE_TOOLS: Record<string, ToolDef[]> = {
@@ -907,6 +1011,7 @@ export const SERVICE_TOOLS: Record<string, ToolDef[]> = {
   slides: slidesTools,
   gmail: gmailTools,
   tasks: tasksTools,
+  people: peopleTools,
 };
 
 export const ALL_SERVICES = Object.keys(SERVICE_TOOLS);
