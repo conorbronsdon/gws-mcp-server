@@ -26,7 +26,7 @@ import { z } from "zod";
 import { execFileSync } from "node:child_process";
 import { readFileSync, unlinkSync, existsSync, copyFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { getToolsForServices, ALL_SERVICES, buildAnnotations, type ToolDef } from "./services.js";
+import { getToolsForServices, ALL_SERVICES, DEFAULT_SERVICES, buildAnnotations, type ToolDef } from "./services.js";
 import { executeGws, spawnGwsRaw, escapeJsonArg } from "./executor.js";
 import { buildRfc2822, base64url } from "./mime.js";
 
@@ -51,7 +51,7 @@ export const SERVER_VERSION: string = JSON.parse(
 
 function parseArgs(): { services: string[]; gwsBinary: string; readOnly: boolean } {
   const args = process.argv.slice(2);
-  let services = ALL_SERVICES;
+  let services = [...DEFAULT_SERVICES];
   let gwsBinary = "gws";
   let readOnly = false;
 
@@ -76,7 +76,8 @@ function parseArgs(): { services: string[]; gwsBinary: string; readOnly: boolean
 gws-mcp-server — MCP server for Google Workspace CLI
 
 OPTIONS:
-  --services, -s <list>   Comma-separated services to expose (default: all)
+  --services, -s <list>   Comma-separated services to expose
+                          Default: ${DEFAULT_SERVICES.join(", ")}
                           Available: ${ALL_SERVICES.join(", ")}
   --gws-path <path>       Path to gws binary (default: "gws")
   --read-only             Register only the read-only tools. No tool that

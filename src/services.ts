@@ -1016,6 +1016,20 @@ export const SERVICE_TOOLS: Record<string, ToolDef[]> = {
 
 export const ALL_SERVICES = Object.keys(SERVICE_TOOLS);
 
+// People is supported but opt-in: it needs an OAuth scope outside gws's
+// default grant and a separately enabled API. Keep this list explicit so a
+// future service cannot silently add context or broken-until-configured tools
+// to every no-flag startup merely by joining SERVICE_TOOLS.
+export const DEFAULT_SERVICES = [
+  "drive",
+  "sheets",
+  "calendar",
+  "docs",
+  "slides",
+  "gmail",
+  "tasks",
+];
+
 export function getToolsForServices(services: string[]): ToolDef[] {
   const tools: ToolDef[] = [];
   for (const svc of services) {

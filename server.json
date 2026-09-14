@@ -21,9 +21,9 @@
         {
           "type": "named",
           "name": "--services",
-          "description": "Comma-separated list of Google services to expose (drive,sheets,calendar,docs,slides,gmail,tasks,people). Defaults to all.",
+          "description": "Comma-separated list of Google services to expose (drive,sheets,calendar,docs,slides,gmail,tasks,people). People is opt-in because it needs an additional OAuth grant and enabled API.",
           "isRequired": false,
-          "default": "drive,sheets,calendar,docs,slides,gmail,tasks,people"
+          "default": "drive,sheets,calendar,docs,slides,gmail,tasks"
         },
         {
           "type": "named",

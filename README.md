@@ -81,11 +81,19 @@ npm install && npm run build
       "command": "npx",
       "args": [
         "gws-mcp-server",
-        "--services", "drive,sheets,calendar,docs,slides,gmail,tasks,people"
+        "--services", "drive,sheets,calendar,docs,slides,gmail,tasks"
       ]
     }
   }
 }
+```
+
+Contacts is opt-in because it needs additional authentication and API setup.
+After completing the [Contacts prerequisites](#contacts-needs-a-scope-outside-the-default-grant),
+append `people` to the service list:
+
+```json
+"args": ["gws-mcp-server", "--services", "drive,calendar,people"]
 ```
 
 ### Claude Desktop (`claude_desktop_config.json`)
@@ -108,13 +116,13 @@ npm install && npm run build
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--services, -s` | Comma-separated list of services to expose | All services |
+| `--services, -s` | Comma-separated list of services to expose | Core services; `people` is opt-in |
 | `--gws-path` | Path to the `gws` binary | `gws` |
 | `--read-only` | Register only the read-only tools | off |
 
 ### `--read-only`
 
-`--read-only` registers **29 tools** instead of 67. Every tool that writes to Google is left unregistered, so it never appears in `tools/list` and there is nothing for an agent to call — including `gmail_drafts_create`, which is a write even though it never sends. `drive_files_download` stays, since it reads.
+`--read-only` registers **26 tools** instead of the default 61. Every tool that writes to Google is left unregistered, so it never appears in `tools/list` and there is nothing for an agent to call — including `gmail_drafts_create`, which is a write even though it never sends. `drive_files_download` stays, since it reads. Explicitly adding `people` raises those counts to 29 read-only tools out of 67 total.
 
 ```bash
 gws-mcp-server --read-only
@@ -125,7 +133,7 @@ This constrains the **agent, not the credential**. The token on disk keeps whate
 
 ### Trimming context cost
 
-Every registered tool rides along in each conversation: the full registry is roughly 52 KB of `tools/list` payload (~13.2K tokens) that your MCP client loads before anything else happens. The two flags above compose, and dropping whole services you don't use is the cheapest context win there is:
+Every registered tool rides along in each conversation. The default registry is roughly 46 KB of `tools/list` payload (~11.8K tokens); opting into `people` raises the full registry to roughly 52 KB (~13.2K tokens). The two flags above compose, and dropping whole services you don't use is the cheapest context win there is:
 
 ```bash
 gws-mcp-server --services calendar                       # calendar assistant: 6 tools
@@ -229,7 +237,7 @@ Needs the `contacts` scope and an enabled People API — see [Contacts needs a s
 
 > **Update semantics:** the `*_update` tools (calendar events, tasks, task lists) use the Google API's `patch` verb — they merge the fields you supply and leave the rest untouched. To *clear* an existing value, pass it explicitly (e.g. an empty string) rather than omitting it.
 
-**Total: 67 tools** (vs 200-400 in the old implementation)
+**Total: 67 supported tools; 61 enabled by default** (vs 200-400 in the old implementation)
 
 ## Adding new tools
 

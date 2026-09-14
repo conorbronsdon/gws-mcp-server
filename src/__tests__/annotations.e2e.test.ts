@@ -15,7 +15,7 @@ import { readFileSync } from "node:fs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServer, countRegisteredTools, SERVER_VERSION } from "../index.js";
-import { getToolsForServices, ALL_SERVICES } from "../services.js";
+import { getToolsForServices, ALL_SERVICES, DEFAULT_SERVICES } from "../services.js";
 
 /** Drive a real MCP client against an assembled server and return it. */
 async function connect(services: string[], readOnly = false): Promise<Client> {
@@ -144,6 +144,7 @@ describe("startup tool count", () => {
   // matter: the custom tools are gated on drive and gmail individually.
   const cases: string[][] = [
     ALL_SERVICES,
+    DEFAULT_SERVICES,
     ["drive"],
     ["gmail"],
     ["drive", "gmail"],
@@ -166,6 +167,21 @@ describe("startup tool count", () => {
     expect(registry.length).toBe(63);
     expect(countRegisteredTools(registry, ALL_SERVICES)).toBe(67);
     expect(countRegisteredTools(registry, ["sheets"])).toBe(registry.length);
+  });
+
+  it("keeps the no-flag registry at 61 tools and makes People opt-in", async () => {
+    const client = await connect(DEFAULT_SERVICES);
+    const listed = (await client.listTools()).tools;
+    expect(listed.length).toBe(61);
+    expect(listed.some((tool) => tool.name.startsWith("people_"))).toBe(false);
+  });
+
+  it("keeps server.json's default aligned with the runtime default", () => {
+    const manifest = JSON.parse(
+      readFileSync(new URL("../../server.json", import.meta.url), "utf-8"),
+    ) as { packages: Array<{ packageArguments: Array<{ name: string; default?: string }> }> };
+    const servicesArg = manifest.packages[0].packageArguments.find((arg) => arg.name === "--services");
+    expect(servicesArg?.default?.split(",")).toEqual(DEFAULT_SERVICES);
   });
 });
 

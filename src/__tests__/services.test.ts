@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { getToolsForServices, SERVICE_TOOLS, ALL_SERVICES, buildAnnotations, type ToolDef } from "../services.js";
+import { getToolsForServices, SERVICE_TOOLS, ALL_SERVICES, DEFAULT_SERVICES, buildAnnotations, type ToolDef } from "../services.js";
 import { buildArgs, escapeJsonArg } from "../executor.js";
 import { buildZodSchema } from "../index.js";
 
@@ -35,6 +35,16 @@ describe("getToolsForServices", () => {
     const tools = getToolsForServices(ALL_SERVICES);
     const totalExpected = Object.values(SERVICE_TOOLS).reduce((sum, arr) => sum + arr.length, 0);
     expect(tools.length).toBe(totalExpected);
+  });
+
+  it("keeps People supported but outside the default service set", () => {
+    expect(ALL_SERVICES).toContain("people");
+    expect(DEFAULT_SERVICES).toEqual([
+      "drive", "sheets", "calendar", "docs", "slides", "gmail", "tasks",
+    ]);
+    expect(DEFAULT_SERVICES).not.toContain("people");
+    expect(getToolsForServices(DEFAULT_SERVICES).some((tool) => tool.name.startsWith("people_"))).toBe(false);
+    expect(getToolsForServices(["people"]).length).toBe(6);
   });
 });
 
