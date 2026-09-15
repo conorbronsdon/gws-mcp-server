@@ -60,12 +60,16 @@ Without both steps, `people_*` tools fail: a missing scope surfaces as a 401/403
 
 ### Forms needs a scope outside the default grant
 
-Same two-step pattern as Contacts. The `forms_*` tools need the `forms.body`/`forms.responses.readonly` scopes, which the default seven-scope grant does not request. Run `gws auth login -s forms` once to add them:
+Same two-step pattern as Contacts. The `forms_*` tools need the `forms.body`/`forms.responses.readonly` scopes, which the default seven-scope grant does not request.
+
+**`gws auth login -s forms` replaces your whole credential with only the scopes checked in that picker run** — it does not add to your existing grant. Confirmed live: running it dropped Drive/Gmail/Calendar/Docs/Sheets/Slides/Tasks down to nothing, because the picker's checked/unchecked defaults can't be trusted (see the "Grant fewer scopes than the default" caveat above). Before running it, check `gws auth status`'s `scope_count`, then compare after — if it dropped, re-grant everything at once instead of trying to add just Forms:
 
 ```bash
-gws auth login -s forms
+gws auth login --scopes "email,profile,openid,<...your other already-granted scopes...>,https://www.googleapis.com/auth/forms.body,https://www.googleapis.com/auth/forms.responses.readonly"
 gcloud services enable forms.googleapis.com --project=<your-project-id>
 ```
+
+`--scopes` takes an explicit comma-separated list and bypasses the picker entirely, so there's no ambiguity about what gets requested. It also opens a browser for OAuth consent like any `gws auth login` call — that part isn't skippable. Separately, each scope you request must already be listed on the OAuth client's own Cloud Console consent screen (**Google Auth Platform → Data access → Add or remove scopes**, on the project the `gws` OAuth client actually belongs to) or Google silently drops it from the issued token with no error at grant time — it only surfaces later as a 403 on the affected API calls.
 
 **A form created via `forms_forms_create` is published and accepting responses by default.** Google's own docs describe a policy change to default-unpublished effective 2026-06-30 (see [API changes to Google Forms](https://developers.google.com/workspace/forms/api/guides/api-changes-to-google-forms)), but live testing after that date still shows published-by-default behavior — pass `unpublished: true` explicitly if you don't want the form live immediately, rather than relying on either the old or new documented default.
 
