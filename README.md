@@ -2,7 +2,7 @@
 
 # gws-mcp-server
 
-Google Workspace for AI agents: Gmail, Calendar, Drive, Sheets, Docs, Slides, Tasks, and Contacts as a curated set of 67 [Model Context Protocol](https://modelcontextprotocol.io/) tools, built on the official [Google Workspace CLI (`gws`)](https://github.com/googleworkspace/cli).
+Google Workspace for AI agents: Gmail, Calendar, Drive, Sheets, Docs, Slides, Tasks, Contacts, and Forms as a curated set of 73 [Model Context Protocol](https://modelcontextprotocol.io/) tools, built on the official [Google Workspace CLI (`gws`)](https://github.com/googleworkspace/cli).
 
 [![npm version](https://img.shields.io/npm/v/gws-mcp-server?style=flat-square)](https://www.npmjs.com/package/gws-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
@@ -58,6 +58,17 @@ gcloud services enable people.googleapis.com --project=<your-project-id>
 
 Without both steps, `people_*` tools fail: a missing scope surfaces as a 401/403 from Google, and a disabled API surfaces as a distinct 403 naming the API and a console link to enable it.
 
+### Forms needs a scope outside the default grant
+
+Same two-step pattern as Contacts. The `forms_*` tools need the `forms.body`/`forms.responses.readonly` scopes, which the default seven-scope grant does not request. Run `gws auth login -s forms` once to add them:
+
+```bash
+gws auth login -s forms
+gcloud services enable forms.googleapis.com --project=<your-project-id>
+```
+
+**A form created via `forms_forms_create` is published and accepting responses by default.** Google's own docs describe a policy change to default-unpublished effective 2026-06-30 (see [API changes to Google Forms](https://developers.google.com/workspace/forms/api/guides/api-changes-to-google-forms)), but live testing after that date still shows published-by-default behavior — pass `unpublished: true` explicitly if you don't want the form live immediately, rather than relying on either the old or new documented default.
+
 ## Quick start
 
 ```bash
@@ -88,12 +99,13 @@ npm install && npm run build
 }
 ```
 
-Contacts is opt-in because it needs additional authentication and API setup.
-After completing the [Contacts prerequisites](#contacts-needs-a-scope-outside-the-default-grant),
-append `people` to the service list:
+Contacts and Forms are opt-in because each needs additional authentication and API setup.
+After completing the [Contacts](#contacts-needs-a-scope-outside-the-default-grant) or
+[Forms](#forms-needs-a-scope-outside-the-default-grant) prerequisites, append `people` and/or
+`forms` to the service list:
 
 ```json
-"args": ["gws-mcp-server", "--services", "drive,calendar,people"]
+"args": ["gws-mcp-server", "--services", "drive,calendar,people,forms"]
 ```
 
 ### Claude Desktop (`claude_desktop_config.json`)
@@ -116,13 +128,13 @@ append `people` to the service list:
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--services, -s` | Comma-separated list of services to expose | Core services; `people` is opt-in |
+| `--services, -s` | Comma-separated list of services to expose | Core services; `people`/`forms` are opt-in |
 | `--gws-path` | Path to the `gws` binary | `gws` |
 | `--read-only` | Register only the read-only tools | off |
 
 ### `--read-only`
 
-`--read-only` registers **26 tools** instead of the default 61. Every tool that writes to Google is left unregistered, so it never appears in `tools/list` and there is nothing for an agent to call — including `gmail_drafts_create`, which is a write even though it never sends. `drive_files_download` stays, since it reads. Explicitly adding `people` raises those counts to 29 read-only tools out of 67 total.
+`--read-only` registers **26 tools** instead of the default 61. Every tool that writes to Google is left unregistered, so it never appears in `tools/list` and there is nothing for an agent to call — including `gmail_drafts_create`, which is a write even though it never sends. `drive_files_download` stays, since it reads. Explicitly adding `people` and `forms` raises those counts to 32 read-only tools out of 73 total.
 
 ```bash
 gws-mcp-server --read-only
@@ -133,7 +145,7 @@ This constrains the **agent, not the credential**. The token on disk keeps whate
 
 ### Trimming context cost
 
-Every registered tool rides along in each conversation. The default registry is roughly 46 KB of `tools/list` payload (~11.8K tokens); opting into `people` raises the full registry to roughly 52 KB (~13.2K tokens). The two flags above compose, and dropping whole services you don't use is the cheapest context win there is:
+Every registered tool rides along in each conversation. The default registry is roughly 46 KB of `tools/list` payload (~11.8K tokens); opting into `people` and `forms` raises the full registry to roughly 57 KB (~14.7K tokens). The two flags above compose, and dropping whole services you don't use is the cheapest context win there is:
 
 ```bash
 gws-mcp-server --services calendar                       # calendar assistant: 6 tools
@@ -235,9 +247,18 @@ Needs the `contacts` scope and an enabled People API — see [Contacts needs a s
 - `people_people_deleteContact` — Permanently delete a contact
 - `people_connections_list` — List the authenticated user's contacts
 
+### `forms` (6 tools)
+Needs the `forms.body`/`forms.responses.readonly` scopes and an enabled Forms API — see [Forms needs a scope outside the default grant](#forms-needs-a-scope-outside-the-default-grant).
+- `forms_forms_get` — Get a form's info, items, settings, and publish state
+- `forms_forms_create` — Create a new form (title only — add items via `forms_forms_batchUpdate`). Published and accepting responses by default; pass `unpublished: true` for a draft
+- `forms_forms_batchUpdate` — Add/move/delete/update items and question groups, update info or settings; requests apply in order
+- `forms_forms_setPublishSettings` — Publish or unpublish a form and control whether it accepts responses
+- `forms_responses_list` — List a form's responses
+- `forms_responses_get` — Get a single response
+
 > **Update semantics:** the `*_update` tools (calendar events, tasks, task lists) use the Google API's `patch` verb — they merge the fields you supply and leave the rest untouched. To *clear* an existing value, pass it explicitly (e.g. an empty string) rather than omitting it.
 
-**Total: 67 supported tools; 61 enabled by default** (vs 200-400 in the old implementation)
+**Total: 73 supported tools; 61 enabled by default** (vs 200-400 in the old implementation)
 
 ## Adding new tools
 
@@ -310,7 +331,7 @@ These are separate credential families, not one login: Workspace authenticates w
 
 ## About
 
-Built and maintained by [Conor Bronsdon](https://github.com/conorbronsdon). I host the [Chain of Thought](https://chainofthought.show/?utm_source=github&utm_medium=referral&utm_campaign=repo-readme&utm_content=gws-mcp-server) podcast, which covers AI infrastructure, developer tools, and how practitioners actually use this stuff. I built this to give the agent workflows that run the show safe, curated access to Gmail, Calendar, Drive, Sheets, Docs, Slides, Tasks, and Contacts.
+Built and maintained by [Conor Bronsdon](https://github.com/conorbronsdon). I host the [Chain of Thought](https://chainofthought.show/?utm_source=github&utm_medium=referral&utm_campaign=repo-readme&utm_content=gws-mcp-server) podcast, which covers AI infrastructure, developer tools, and how practitioners actually use this stuff. I built this to give the agent workflows that run the show safe, curated access to Gmail, Calendar, Drive, Sheets, Docs, Slides, Tasks, Contacts, and Forms.
 
 <a href="https://glama.ai/mcp/servers/conorbronsdon/gws-mcp-server">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/conorbronsdon/gws-mcp-server/badge" alt="gws-mcp-server MCP server" />

@@ -46,6 +46,13 @@ describe("getToolsForServices", () => {
     expect(getToolsForServices(DEFAULT_SERVICES).some((tool) => tool.name.startsWith("people_"))).toBe(false);
     expect(getToolsForServices(["people"]).length).toBe(6);
   });
+
+  it("keeps Forms supported but outside the default service set", () => {
+    expect(ALL_SERVICES).toContain("forms");
+    expect(DEFAULT_SERVICES).not.toContain("forms");
+    expect(getToolsForServices(DEFAULT_SERVICES).some((tool) => tool.name.startsWith("forms_"))).toBe(false);
+    expect(getToolsForServices(["forms"]).length).toBe(6);
+  });
 });
 
 describe("tool definitions integrity", () => {
@@ -78,10 +85,11 @@ describe("tool definitions integrity", () => {
     expect(SERVICE_TOOLS["gmail"].length).toBe(5);
     expect(SERVICE_TOOLS["tasks"].length).toBe(12);
     expect(SERVICE_TOOLS["people"].length).toBe(6);
+    expect(SERVICE_TOOLS["forms"].length).toBe(6);
   });
 
-  it("total tool count is 63", () => {
-    expect(allTools.length).toBe(63);
+  it("total tool count is 69", () => {
+    expect(allTools.length).toBe(69);
   });
 
   it("all params have required fields", () => {
@@ -720,6 +728,86 @@ describe("people_people_updateContact / deleteContact classification", () => {
   });
 });
 
+// ── Forms service shape ───────────────────────────────────────────────────
+// Unlike people_people_get/searchContacts, forms.forms.get and
+// forms.responses.list/get have no field-mask parameter at all in the
+// Discovery doc — there is no personFields-style required-despite-optional
+// gotcha here, confirmed via `gws schema forms.forms.get`.
+
+describe("forms service shape", () => {
+  const formsByName = new Map(SERVICE_TOOLS["forms"].map((t) => [t.name, t]));
+
+  it("routes forms_forms_* through the 3-segment 'forms forms <method>' command", () => {
+    for (const name of ["forms_forms_get", "forms_forms_create", "forms_forms_batchUpdate", "forms_forms_setPublishSettings"]) {
+      const tool = formsByName.get(name)!;
+      expect(tool.command[0]).toBe("forms");
+      expect(tool.command[1]).toBe("forms");
+    }
+  });
+
+  it("routes forms_responses_* through the 4-segment 'forms forms responses <method>' command", () => {
+    // Live-verified via `gws forms forms responses --help`: responses is a
+    // sub-resource of `forms forms`, not a top-level `forms` resource — the
+    // same nesting-depth trap PR-7 hit with `people people connections list`.
+    expect(formsByName.get("forms_responses_list")!.command).toEqual(["forms", "forms", "responses", "list"]);
+    expect(formsByName.get("forms_responses_get")!.command).toEqual(["forms", "forms", "responses", "get"]);
+  });
+
+  it("no forms tool declares a 'fields' or field-mask param — none is required by this API's Discovery doc", () => {
+    for (const tool of SERVICE_TOOLS["forms"]) {
+      const allParams = [...tool.params, ...(tool.bodyParams ?? [])];
+      expect(allParams.find((p) => p.name === "fields" || p.name === "personFields")).toBeUndefined();
+    }
+  });
+
+  it("forms_forms_create's body carries only 'info' — items/settings/description are disallowed by the API at creation", () => {
+    const tool = formsByName.get("forms_forms_create")!;
+    expect(tool.bodyParams?.map((p) => p.name)).toEqual(["info"]);
+    expect(tool.bodyParams![0].required).toBe(true);
+  });
+
+  it("forms_forms_batchUpdate/setPublishSettings are destructive; batchUpdate mirrors the sibling batchUpdate tools with no idempotent flag", () => {
+    const batchUpdate = formsByName.get("forms_forms_batchUpdate")!;
+    const publish = formsByName.get("forms_forms_setPublishSettings")!;
+    expect(buildAnnotations(batchUpdate)).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    });
+    // setPublishSettings overwrites publish state (drive_comments_update-style
+    // replace), and repeating the same publishSettings body is a no-op.
+    expect(buildAnnotations(publish)).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: true,
+    });
+  });
+
+  it("forms_forms_create is additive and non-idempotent, like every other *_create tool", () => {
+    const a = buildAnnotations(formsByName.get("forms_forms_create")!);
+    expect(a.readOnlyHint).toBe(false);
+    expect(a.destructiveHint).toBe(false);
+    expect(a.idempotentHint).toBe(false);
+  });
+
+  it("sends requests/publishSettings as top-level JSON body keys, not nested under a wrapper", () => {
+    // The people_people_createContact "person wrapper" bug (#62) came from a
+    // bodyParam name that did not match a real top-level API field. Here
+    // 'requests'/'publishSettings' genuinely are top-level Form/
+    // SetPublishSettingsRequest fields, so buildArgs' per-param nesting is
+    // correct as-is — pinned so a future refactor can't silently reintroduce
+    // a synthetic wrapper key.
+    const batchUpdate = formsByName.get("forms_forms_batchUpdate")!;
+    const args = buildArgs(batchUpdate, { formId: "f1", requests: '[{"updateFormInfo":{}}]' });
+    const jsonIdx = args.indexOf("--json");
+    expect(args[jsonIdx + 1]).toBe(
+      escapeJsonArg(JSON.stringify({ requests: [{ updateFormInfo: {} }] })),
+    );
+  });
+});
+
 // ── Tool annotations (issue #5) ──────────────────────────────────────────
 
 describe("buildAnnotations mapping", () => {
@@ -829,6 +917,8 @@ describe("tool annotation classifications", () => {
       "tasks_tasklists_delete",
       "tasks_tasks_delete",
       "tasks_tasks_clear",
+      "forms_forms_batchUpdate",
+      "forms_forms_setPublishSettings",
     ];
     for (const name of expectDestructive) {
       const tool = byName.get(name)!;
@@ -847,6 +937,7 @@ describe("tool annotation classifications", () => {
       "slides_get", "slides_pages_get", "slides_pages_getThumbnail",
       "gmail_messages_list", "gmail_messages_get", "gmail_threads_list", "gmail_threads_get",
       "tasks_tasklists_list", "tasks_tasklists_get", "tasks_tasks_list", "tasks_tasks_get",
+      "forms_forms_get", "forms_responses_list", "forms_responses_get",
     ];
     for (const name of expectReadOnly) {
       const tool = byName.get(name)!;
@@ -865,6 +956,7 @@ describe("tool annotation classifications", () => {
       "slides_create",
       "tasks_tasklists_insert", "tasks_tasklists_update",
       "tasks_tasks_insert", "tasks_tasks_update", "tasks_tasks_move",
+      "forms_forms_create",
     ];
     for (const name of expectAdditive) {
       const tool = byName.get(name)!;
@@ -910,15 +1002,15 @@ describe("tool annotation classifications", () => {
     }
   });
 
-  it("classification counts match the intended split (28 read / 16 destructive / 19 additive)", () => {
+  it("classification counts match the intended split (31 read / 18 destructive / 20 additive)", () => {
     const read = allTools.filter((t) => buildAnnotations(t).readOnlyHint === true).length;
     const destructive = allTools.filter((t) => buildAnnotations(t).destructiveHint === true).length;
     const additive = allTools.filter(
       (t) => buildAnnotations(t).readOnlyHint === false && buildAnnotations(t).destructiveHint === false,
     ).length;
-    expect(read).toBe(28);
-    expect(destructive).toBe(16);
-    expect(additive).toBe(19);
+    expect(read).toBe(31);
+    expect(destructive).toBe(18);
+    expect(additive).toBe(20);
     expect(read + destructive + additive).toBe(allTools.length);
   });
 });

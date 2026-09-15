@@ -29,7 +29,8 @@
     "google-slides",
     "gmail",
     "google-tasks",
-    "google-contacts"
+    "google-contacts",
+    "google-forms"
   ],
   "mcpName": "io.github.conorbronsdon/gws-mcp-server",
   "author": "Conor Bronsdon",

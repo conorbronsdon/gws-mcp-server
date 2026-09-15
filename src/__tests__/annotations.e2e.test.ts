@@ -58,7 +58,7 @@ const byName = (n: string): ListedTool => {
 
 describe("advertised annotations", () => {
   it("registers all four hand-written tools alongside the registry tools", () => {
-    expect(tools.length).toBe(67);
+    expect(tools.length).toBe(73);
     expect(byName("drive_files_download")).toBeDefined();
     expect(byName("gmail_drafts_create")).toBeDefined();
     expect(byName("drive_permissions_transferOwnership")).toBeDefined();
@@ -125,6 +125,8 @@ describe("advertised annotations", () => {
       "drive_permissions_update",
       "drive_replies_delete",
       "drive_replies_update",
+      "forms_forms_batchUpdate",
+      "forms_forms_setPublishSettings",
       "people_people_deleteContact",
       "people_people_updateContact",
       "sheets_batchUpdate",
@@ -164,8 +166,8 @@ describe("startup tool count", () => {
     // Guards against the fix being "fudge the string": the number has to come
     // from somewhere other than the registry length.
     const registry = getToolsForServices(ALL_SERVICES);
-    expect(registry.length).toBe(63);
-    expect(countRegisteredTools(registry, ALL_SERVICES)).toBe(67);
+    expect(registry.length).toBe(69);
+    expect(countRegisteredTools(registry, ALL_SERVICES)).toBe(73);
     expect(countRegisteredTools(registry, ["sheets"])).toBe(registry.length);
   });
 
@@ -201,9 +203,9 @@ describe("--read-only", () => {
     roTools = (await client.listTools()).tools as ListedTool[];
   });
 
-  it("exposes exactly the 29 read-only tools", () => {
-    expect(roTools.length).toBe(29);
-    expect(countRegisteredTools(getToolsForServices(ALL_SERVICES), ALL_SERVICES, true)).toBe(29);
+  it("exposes exactly the 32 read-only tools", () => {
+    expect(roTools.length).toBe(32);
+    expect(countRegisteredTools(getToolsForServices(ALL_SERVICES), ALL_SERVICES, true)).toBe(32);
   });
 
   it("exposes 26 tools for the real no-flag --read-only invocation", async () => {
@@ -226,8 +228,8 @@ describe("--read-only", () => {
     const dropped = tools
       .filter((t) => t.annotations?.readOnlyHint !== true)
       .map((t) => t.name);
-    // 67 default - 29 read-only = 38 writes, all gone.
-    expect(dropped.length).toBe(38);
+    // 73 default - 32 read-only = 41 writes, all gone.
+    expect(dropped.length).toBe(41);
     for (const name of dropped) {
       expect(roTools.find((t) => t.name === name)).toBeUndefined();
     }
@@ -244,7 +246,7 @@ describe("--read-only", () => {
   });
 
   it("is additive — the default server is unchanged", () => {
-    expect(tools.length).toBe(67);
+    expect(tools.length).toBe(73);
     expect(tools.find((t) => t.name === "gmail_drafts_create")).toBeDefined();
     expect(tools.find((t) => t.name === "drive_files_delete")).toBeDefined();
   });
@@ -269,8 +271,8 @@ describe("idempotentHint / openWorldHint", () => {
       .filter((t) => typeof t.annotations?.openWorldHint !== "boolean")
       .map((t) => t.name);
     expect(missing).toEqual([]);
-    // All 67 reach Google Workspace, whose state changes independently of us.
-    expect(tools.filter((t) => t.annotations?.openWorldHint === true).length).toBe(67);
+    // All 73 reach Google Workspace, whose state changes independently of us.
+    expect(tools.filter((t) => t.annotations?.openWorldHint === true).length).toBe(73);
   });
 
   it("every write advertises idempotentHint, and no read does", () => {
@@ -307,6 +309,7 @@ describe("idempotentHint / openWorldHint", () => {
       "drive_permissions_update",
       "drive_replies_delete",
       "drive_replies_update",
+      "forms_forms_setPublishSettings",
       "gmail_threads_modify",
       "people_people_deleteContact",
       "people_people_updateContact",
@@ -342,6 +345,8 @@ describe("idempotentHint / openWorldHint", () => {
       "drive_permissions_proposeOwnershipTransfer",
       "drive_permissions_transferOwnership",
       "drive_replies_create",
+      "forms_forms_batchUpdate",
+      "forms_forms_create",
       "gmail_drafts_create",
       "people_people_createContact",
       "sheets_batchUpdate",
@@ -357,6 +362,7 @@ describe("idempotentHint / openWorldHint", () => {
     expect(byName("docs_batchUpdate").annotations?.destructiveHint).toBe(true);
     expect(byName("slides_batchUpdate").annotations?.destructiveHint).toBe(true);
     expect(byName("sheets_batchUpdate").annotations?.destructiveHint).toBe(true);
+    expect(byName("forms_forms_batchUpdate").annotations?.destructiveHint).toBe(true);
   });
 
   it("gives the hand-registered tools all the hints the builder would", () => {
@@ -385,13 +391,13 @@ describe("idempotentHint / openWorldHint", () => {
     });
   });
 
-  it("accounts for all 67 tools", () => {
+  it("accounts for all 73 tools", () => {
     const reads = tools.filter((t) => t.annotations?.readOnlyHint === true).length;
     const idem = tools.filter((t) => t.annotations?.idempotentHint === true).length;
     const nonIdem = tools.filter((t) => t.annotations?.idempotentHint === false).length;
-    expect(reads).toBe(29);
-    expect(idem + nonIdem).toBe(67 - reads);
-    expect(idem).toBe(19);
-    expect(nonIdem).toBe(19);
+    expect(reads).toBe(32);
+    expect(idem + nonIdem).toBe(73 - reads);
+    expect(idem).toBe(20);
+    expect(nonIdem).toBe(21);
   });
 });

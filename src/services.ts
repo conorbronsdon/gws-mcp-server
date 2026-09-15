@@ -1001,6 +1001,86 @@ const peopleTools: ToolDef[] = [
   },
 ];
 
+// ── Forms ──────────────────────────────────────────────────────────────
+
+const formsTools: ToolDef[] = [
+  {
+    name: "forms_forms_get",
+    description: "Get a form's info, items (questions), settings, and publish state.",
+    command: ["forms", "forms", "get"],
+    params: [
+      { name: "formId", description: "The form ID", type: "string", required: true },
+    ],
+    readOnly: true,
+  },
+  {
+    name: "forms_forms_create",
+    description: "Create a new form. Only info.title (required) and info.documentTitle (optional — sets the Drive file name shown in the UI when title is empty) are copied from the request body; description, items, and settings are all silently disallowed at creation time. Add them afterward with forms_forms_batchUpdate. Live-verified: the form is published and accepting responses by default (isPublished/isAcceptingResponses both true) unless unpublished is explicitly set to true — Google's own docs describe a policy change to default-unpublished effective 2026-06-30, but live behavior after that date still defaults to published, so pass unpublished explicitly rather than relying on either claim.",
+    command: ["forms", "forms", "create"],
+    params: [
+      { name: "unpublished", description: "Set true to create the form unpublished (no responses accepted until published via forms_forms_setPublishSettings)", type: "boolean", required: false },
+    ],
+    bodyParams: [
+      { name: "info", description: "Form info as JSON string — only title and documentTitle are honored here, e.g. '{\"title\":\"Feedback\"}'", type: "string", required: true },
+    ],
+  },
+  {
+    name: "forms_forms_batchUpdate",
+    description: "Apply updates to a form: add/move/delete/update items and question groups, update info or settings. Sub-requests are validated and applied in the order given — e.g. a createItem targeting index 1 fails the whole batch if an earlier request hasn't yet created the item at index 0. All requests in a batch succeed together or none are applied.",
+    command: ["forms", "forms", "batchUpdate"],
+    params: [
+      { name: "formId", description: "The form ID", type: "string", required: true },
+    ],
+    bodyParams: [
+      { name: "requests", description: "Array of update requests as JSON string", type: "string", required: true },
+    ],
+    // Mirrors docs_batchUpdate/slides_batchUpdate/sheets_batchUpdate: the
+    // request union includes deleteItem, so the annotation reflects
+    // worst-case capability, not per-call behavior.
+    destructive: true,
+  },
+  {
+    name: "forms_forms_setPublishSettings",
+    description: "Publish or unpublish a form and control whether it accepts responses. publishState.isPublished and isAcceptingResponses must be set together — isAcceptingResponses: true with isPublished: false is rejected by the API. Unpublishing stops the form from accepting new responses; form content and existing responses are untouched, and republishing restores it.",
+    command: ["forms", "forms", "setPublishSettings"],
+    params: [
+      { name: "formId", description: "The form ID", type: "string", required: true },
+    ],
+    bodyParams: [
+      { name: "publishSettings", description: "As JSON string, e.g. '{\"publishState\":{\"isPublished\":true,\"isAcceptingResponses\":true}}'", type: "string", required: true },
+      { name: "updateMask", description: "Comma-separated field mask of which publishSettings fields to update: \"publishState\" or \"*\"", type: "string", required: false },
+    ],
+    // Matches drive_comments_update/people_people_updateContact: overwrites
+    // the form's publish state rather than adding to it, and unpublishing
+    // removes the capability to accept new responses — the same "downgrading
+    // removes capabilities" reasoning drive_permissions_update was corrected to.
+    destructive: true,
+    idempotent: true,
+  },
+  {
+    name: "forms_responses_list",
+    description: "List a form's responses.",
+    command: ["forms", "forms", "responses", "list"],
+    params: [
+      { name: "formId", description: "The form ID", type: "string", required: true },
+      { name: "filter", description: "Only \"timestamp > <ts>\" or \"timestamp >= <ts>\" are supported (RFC3339 UTC), e.g. 'timestamp > 2026-01-01T00:00:00Z'", type: "string", required: false },
+      { name: "pageSize", description: "Max responses to return (default/max 5000)", type: "number", required: false },
+      { name: "pageToken", description: "Page token from a previous call", type: "string", required: false },
+    ],
+    readOnly: true,
+  },
+  {
+    name: "forms_responses_get",
+    description: "Get a single response to a form.",
+    command: ["forms", "forms", "responses", "get"],
+    params: [
+      { name: "formId", description: "The form ID", type: "string", required: true },
+      { name: "responseId", description: "The response ID", type: "string", required: true },
+    ],
+    readOnly: true,
+  },
+];
+
 // ── Service registry ───────────────────────────────────────────────────
 
 export const SERVICE_TOOLS: Record<string, ToolDef[]> = {
@@ -1012,14 +1092,16 @@ export const SERVICE_TOOLS: Record<string, ToolDef[]> = {
   gmail: gmailTools,
   tasks: tasksTools,
   people: peopleTools,
+  forms: formsTools,
 };
 
 export const ALL_SERVICES: readonly string[] = Object.freeze(Object.keys(SERVICE_TOOLS));
 
-// People is supported but opt-in: it needs an OAuth scope outside gws's
-// default grant and a separately enabled API. Keep this list explicit so a
-// future service cannot silently add context or broken-until-configured tools
-// to every no-flag startup merely by joining SERVICE_TOOLS.
+// People and Forms are supported but opt-in: each needs an OAuth scope
+// outside gws's default grant and a separately enabled API. Keep this list
+// explicit so a future service cannot silently add context or
+// broken-until-configured tools to every no-flag startup merely by joining
+// SERVICE_TOOLS.
 export const DEFAULT_SERVICES: readonly string[] = Object.freeze([
   "drive",
   "sheets",

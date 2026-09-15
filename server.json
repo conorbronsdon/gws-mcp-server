@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.conorbronsdon/gws-mcp-server",
   "title": "Google Workspace MCP Server",
-  "description": "Google Workspace as 67 curated MCP tools: Gmail, Calendar, Drive, Sheets, Docs, Slides, Tasks, and Contacts.",
+  "description": "Google Workspace as 73 curated MCP tools: Gmail, Calendar, Drive, Sheets, Docs, Slides, Tasks, Contacts, and Forms.",
   "repository": {
     "url": "https://github.com/conorbronsdon/gws-mcp-server",
     "source": "github"
@@ -21,7 +21,7 @@
         {
           "type": "named",
           "name": "--services",
-          "description": "Comma-separated list of Google services to expose (drive,sheets,calendar,docs,slides,gmail,tasks,people). People is opt-in because it needs an additional OAuth grant and enabled API.",
+          "description": "Comma-separated list of Google services to expose (drive,sheets,calendar,docs,slides,gmail,tasks,people,forms). People and forms are opt-in because each needs an additional OAuth grant and enabled API.",
           "isRequired": false,
           "default": "drive,sheets,calendar,docs,slides,gmail,tasks"
         },
