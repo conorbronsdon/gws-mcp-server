@@ -50,14 +50,15 @@ gws auth login --readonly    # read-only across services
 
 The `people_*` tools need the `contacts` scope, which the default `gws auth login` (and the seven-scope grant described above) does not request.
 
-**A filtered login replaces the saved credential; it does not add scopes to it.** Do not run `gws auth login -s people` expecting it to preserve Drive, Gmail, Calendar, or other existing grants. First record the `scopes` from `gws auth status`, then re-grant that complete list plus Contacts in one explicit login:
+**A filtered login replaces the saved credential; it does not add scopes to it.** Do not run `gws auth login -s people` expecting it to preserve Drive, Gmail, Calendar, or other existing grants. If `gws auth status` shows a `scopes` array, save it before reauthenticating. That field is discovered live and can be absent when token refresh or Google's token-info lookup is unavailable; unknown custom grants cannot be recovered from the saved credential. If it is absent, stop and reconstruct the intended scope set from your original provisioning notes or backup instead of guessing.
+
+If you know the credential used exactly the default seven scopes described above, re-grant those seven plus Contacts explicitly:
 
 ```bash
-gws auth status
-gws auth login --scopes "<comma-separated existing scopes>,https://www.googleapis.com/auth/contacts"
+gws auth login --scopes "https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/spreadsheets,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/documents,https://www.googleapis.com/auth/presentations,https://www.googleapis.com/auth/tasks,https://www.googleapis.com/auth/contacts"
 ```
 
-Replace the placeholder with the scopes reported by `gws auth status` before running the second command. Compare the status afterward so a silently dropped scope is caught before an agent needs it.
+For a custom or narrower grant, use its known complete intended scope list plus Contacts instead. Run `gws auth status` afterward and exercise the services you expect to use; never treat a missing `scopes` field as proof that the old grants were preserved.
 
 The People API must also be enabled on your own GCP project — a one-time step separate from OAuth, since a new scope grant doesn't enable a new API by itself:
 
