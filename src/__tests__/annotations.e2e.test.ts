@@ -186,6 +186,15 @@ describe("startup tool count", () => {
     const servicesArg = manifest.packages[0].packageArguments.find((arg) => arg.name === "--services");
     expect(servicesArg?.default?.split(",")).toEqual(DEFAULT_SERVICES);
   });
+
+  it("does not tell Contacts users to replace their existing OAuth grants", () => {
+    const readme = readFileSync(new URL("../../README.md", import.meta.url), "utf-8");
+    expect(readme).not.toContain("Run \`gws auth login -s people\`");
+    expect(readme).toContain("Do not run \`gws auth login -s people\`");
+    expect(readme).toContain("A filtered login replaces the saved credential");
+    expect(readme).toContain("gws auth status");
+    expect(readme).toContain("gws auth login --scopes");
+  });
 });
 
 describe("--read-only", () => {
