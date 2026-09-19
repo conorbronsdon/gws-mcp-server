@@ -48,7 +48,16 @@ gws auth login --readonly    # read-only across services
 
 ### Contacts needs a scope outside the default grant
 
-The `people_*` tools need the `contacts` scope, which the default `gws auth login` (and the seven-scope grant described above) does not request. Run `gws auth login -s people` once to add it — `gws`'s scope picker resolves the correct People API scopes automatically for any named service, no code change needed on the `gws` side.
+The `people_*` tools need the `contacts` scope, which the default `gws auth login` (and the seven-scope grant described above) does not request.
+
+**A filtered login replaces the saved credential; it does not add scopes to it.** Do not run `gws auth login -s people` expecting it to preserve Drive, Gmail, Calendar, or other existing grants. First record the `scopes` from `gws auth status`, then re-grant that complete list plus Contacts in one explicit login:
+
+```bash
+gws auth status
+gws auth login --scopes "<comma-separated existing scopes>,https://www.googleapis.com/auth/contacts"
+```
+
+Replace the placeholder with the scopes reported by `gws auth status` before running the second command. Compare the status afterward so a silently dropped scope is caught before an agent needs it.
 
 The People API must also be enabled on your own GCP project — a one-time step separate from OAuth, since a new scope grant doesn't enable a new API by itself:
 
