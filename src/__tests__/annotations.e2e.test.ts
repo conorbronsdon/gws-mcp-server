@@ -186,6 +186,18 @@ describe("startup tool count", () => {
     const servicesArg = manifest.packages[0].packageArguments.find((arg) => arg.name === "--services");
     expect(servicesArg?.default?.split(",")).toEqual(DEFAULT_SERVICES);
   });
+
+  it("does not tell Contacts users to replace their existing OAuth grants", () => {
+    const readme = readFileSync(new URL("../../README.md", import.meta.url), "utf-8");
+    expect(readme).not.toContain("Run `gws auth login -s people`");
+    expect(readme).toContain("Do not run `gws auth login -s people`");
+    expect(readme).toContain("A filtered login replaces the saved credential");
+    expect(readme).toContain("unknown custom grants cannot be recovered");
+    expect(readme).toContain("If it is absent, stop");
+    expect(readme).toContain("If you know the credential used exactly the default seven scopes");
+    expect(readme).toContain("For a custom or narrower grant, use its known complete intended scope list");
+    expect(readme).toContain("https://www.googleapis.com/auth/tasks,https://www.googleapis.com/auth/contacts");
+  });
 });
 
 describe("--read-only", () => {

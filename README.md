@@ -48,7 +48,17 @@ gws auth login --readonly    # read-only across services
 
 ### Contacts needs a scope outside the default grant
 
-The `people_*` tools need the `contacts` scope, which the default `gws auth login` (and the seven-scope grant described above) does not request. Run `gws auth login -s people` once to add it — `gws`'s scope picker resolves the correct People API scopes automatically for any named service, no code change needed on the `gws` side.
+The `people_*` tools need the `contacts` scope, which the default `gws auth login` (and the seven-scope grant described above) does not request.
+
+**A filtered login replaces the saved credential; it does not add scopes to it.** Do not run `gws auth login -s people` expecting it to preserve Drive, Gmail, Calendar, or other existing grants. If `gws auth status` shows a `scopes` array, save it before reauthenticating. That field is discovered live and can be absent when token refresh or Google's token-info lookup is unavailable; unknown custom grants cannot be recovered from the saved credential. If it is absent, stop and reconstruct the intended scope set from your original provisioning notes or backup instead of guessing.
+
+If you know the credential used exactly the default seven scopes described above, re-grant those seven plus Contacts explicitly:
+
+```bash
+gws auth login --scopes "https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/spreadsheets,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/documents,https://www.googleapis.com/auth/presentations,https://www.googleapis.com/auth/tasks,https://www.googleapis.com/auth/contacts"
+```
+
+For a custom or narrower grant, use its known complete intended scope list plus Contacts instead. Run `gws auth status` afterward and exercise the services you expect to use; never treat a missing `scopes` field as proof that the old grants were preserved.
 
 The People API must also be enabled on your own GCP project — a one-time step separate from OAuth, since a new scope grant doesn't enable a new API by itself:
 
