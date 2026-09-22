@@ -198,6 +198,14 @@ describe("startup tool count", () => {
     expect(readme).toContain("For a custom or narrower grant, use its known complete intended scope list");
     expect(readme).toContain("https://www.googleapis.com/auth/tasks,https://www.googleapis.com/auth/contacts");
   });
+
+  it("does not leave the replaced-grant instruction behind in the People source comment", () => {
+    // #65 reworded the README but the services.ts comment kept telling
+    // maintainers to run the filtered login, citing the README as its source.
+    const source = readFileSync(new URL("../services.ts", import.meta.url), "utf-8");
+    expect(source).not.toMatch(/run\s+`gws auth login -s people`/i);
+    expect(source).toContain("Contacts needs");
+  });
 });
 
 describe("--read-only", () => {
