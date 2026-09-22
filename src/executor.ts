@@ -29,11 +29,26 @@ export function escapeForCmd(value: string): string {
   // rather than becoming the invalid JSON sequence \B after cmd.exe parsing.
   // Trailing backslashes need the same treatment because the wrapper's closing
   // quote follows them. This is the standard CommandLineToArgvW quoting rule.
-  const escaped = value
-    .replace(/(?=(\\+?)?)\1"/g, '$1$1\\"')
-    .replace(/(?=(\\+?)?)\1$/g, "$1$1")
-    .replace(CMD_METACHAR_RE, "^$&");
-  return `"${escaped}"`;
+  //
+  // The WHOLE run has to be doubled, so count it rather than match it: a run
+  // of n backslashes before a quote becomes 2n+1, and a trailing run becomes
+  // 2n. Doubling only the last backslash of a longer run leaves an even count
+  // in front of the quote, which the child reads as a closing quote, not a
+  // literal one. JSON.stringify emits exactly that run (`\\"`) for any string
+  // value ending in a backslash, such as a Windows path.
+  let quoted = "";
+  let backslashes = 0;
+  for (const ch of value) {
+    if (ch === "\\") {
+      backslashes++;
+      continue;
+    }
+    quoted += "\\".repeat(ch === '"' ? backslashes * 2 + 1 : backslashes) + ch;
+    backslashes = 0;
+  }
+  quoted += "\\".repeat(backslashes * 2);
+
+  return `"${quoted.replace(CMD_METACHAR_RE, "^$&")}"`;
 }
 
 /**
@@ -106,7 +121,7 @@ export function buildArgs(
     for (const p of tool.bodyParams) {
       if (args[p.name] !== undefined) {
         let val = args[p.name];
-        if (typeof val === "string") {
+        if (typeof val === "string" && !p.literalString) {
           try {
             const parsed = JSON.parse(val);
             if (typeof parsed === "object") {

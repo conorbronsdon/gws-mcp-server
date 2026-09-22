@@ -105,6 +105,11 @@ export interface ParamDef {
   /** Closed set of accepted values (string params only). Enforced at the tool
    *  boundary via z.enum, so an out-of-set value never reaches the wire. */
   enum?: string[];
+  /** Body params only: send the value as the literal string it is. Without
+   *  this, buildArgs JSON-parses any string that decodes to an object or array
+   *  (how `requests`/`attendees` reach the API as arrays). Set it for fields
+   *  the API itself types as a string holding JSON, e.g. a comment `anchor`. */
+  literalString?: boolean;
 }
 
 // ── Drive ──────────────────────────────────────────────────────────────
@@ -308,7 +313,7 @@ const driveTools: ToolDef[] = [
     ],
     bodyParams: [
       { name: "content", description: "Comment text", type: "string", required: true },
-      { name: "anchor", description: "App-defined region JSON string, optional (e.g. '{\"line\":10}')", type: "string", required: false },
+      { name: "anchor", description: "App-defined region JSON string, optional (e.g. '{\"line\":10}')", type: "string", required: false, literalString: true },
     ],
   },
   {
