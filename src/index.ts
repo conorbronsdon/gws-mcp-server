@@ -27,7 +27,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, unlinkSync, existsSync, copyFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { getToolsForServices, ALL_SERVICES, DEFAULT_SERVICES, buildAnnotations, type ToolDef } from "./services.js";
-import { executeGws, spawnGwsRaw, escapeJsonArg } from "./executor.js";
+import { executeGws, spawnGwsRaw } from "./executor.js";
+import { resolveGwsCommand } from "./windows-binary.js";
 import { buildRfc2822, base64url } from "./mime.js";
 
 // ── Package metadata ───────────────────────────────────────────────────
@@ -52,7 +53,7 @@ export const SERVER_VERSION: string = JSON.parse(
 function parseArgs(): { services: string[]; gwsBinary: string; readOnly: boolean } {
   const args = process.argv.slice(2);
   let services = [...DEFAULT_SERVICES];
-  let gwsBinary = "gws";
+  let gwsBinary = process.env.GWS_BINARY || "gws";
   let readOnly = false;
 
   for (let i = 0; i < args.length; i++) {
@@ -79,7 +80,7 @@ OPTIONS:
   --services, -s <list>   Comma-separated services to expose
                           Default: ${DEFAULT_SERVICES.join(", ")}
                           Available: ${ALL_SERVICES.join(", ")}
-  --gws-path <path>       Path to gws binary (default: "gws")
+  --gws-path <path>       Path to gws binary (default: GWS_BINARY or "gws")
   --read-only             Register only the read-only tools. No tool that
                           writes to Google is exposed at all.
   --help, -h              Show this help
@@ -97,23 +98,24 @@ EXAMPLE:
 
 /**
  * Validate that the gws binary exists and is reachable.
- * Uses `where` (Windows) or `which` (Unix) for bare names,
- * or checks that a path resolves to an existing file.
+ * On Windows, resolves a directly runnable command. On Unix, uses `which`.
  * Returns true if valid, false if not found (server continues but tools will error).
  */
 function validateGwsBinary(gwsBinary: string): boolean {
-  // Reject shell metacharacters in the binary path
-  if (/[&|<>^%();`$!]/.test(gwsBinary)) {
+  if (process.platform !== "win32" && /[&|<>^%();`$!]/.test(gwsBinary)) {
     console.error(`[gws-mcp] FATAL: --gws-path contains disallowed characters: ${gwsBinary}`);
     process.exit(1);
   }
 
   try {
-    const whichCmd = process.platform === "win32" ? "where" : "which";
-    execFileSync(whichCmd, [gwsBinary], { stdio: "ignore" });
+    if (process.platform === "win32") {
+      resolveGwsCommand(gwsBinary);
+    } else {
+      execFileSync("which", [gwsBinary], { stdio: "ignore" });
+    }
     return true;
-  } catch {
-    console.error(`[gws-mcp] Warning: gws binary not found: "${gwsBinary}". Tools will error until gws is installed.`);
+  } catch (error) {
+    console.error(`[gws-mcp] Warning: ${error instanceof Error ? error.message : String(error)}`);
     return false;
   }
 }
@@ -385,12 +387,9 @@ export function createServer(
           };
 
           const metaParamsJson = JSON.stringify(metaParams);
-          const metaEscaped = process.platform === "win32"
-            ? (await import("./executor.js")).escapeJsonArg(metaParamsJson)
-            : metaParamsJson;
 
           const metaResult = await spawnGwsRaw(gwsBinary, [
-            "drive", "files", "get", "--params", metaEscaped,
+            "drive", "files", "get", "--params", metaParamsJson,
           ]);
           const meta = JSON.parse(metaResult.stdout);
           const fileMimeType: string = meta.mimeType || "";
@@ -407,11 +406,7 @@ export function createServer(
               mimeType: exportMime,
             };
             const paramsJson = JSON.stringify(exportParams);
-            const escaped = process.platform === "win32"
-              ? (await import("./executor.js")).escapeJsonArg(paramsJson)
-              : paramsJson;
-
-            cliArgs = ["drive", "files", "export", "--params", escaped, "-o", tmpFile];
+            cliArgs = ["drive", "files", "export", "--params", paramsJson, "-o", tmpFile];
           } else {
             // Use alt=media for regular files
             const dlParams: Record<string, unknown> = {
@@ -421,11 +416,7 @@ export function createServer(
             };
 
             const paramsJson = JSON.stringify(dlParams);
-            const escaped = process.platform === "win32"
-              ? (await import("./executor.js")).escapeJsonArg(paramsJson)
-              : paramsJson;
-
-            cliArgs = ["drive", "files", "get", "--params", escaped, "-o", tmpFile];
+            cliArgs = ["drive", "files", "get", "--params", paramsJson, "-o", tmpFile];
           }
 
           console.error(`[gws-mcp] Downloading ${fileName} (${fileMimeType}) to ${tmpFile}`);
@@ -540,8 +531,8 @@ export function createServer(
           const message: { raw: string; threadId?: string } = { raw };
           if (args.threadId) message.threadId = args.threadId;
 
-          const params = escapeJsonArg(JSON.stringify({ userId: "me" }));
-          const json = escapeJsonArg(JSON.stringify({ message }));
+          const params = JSON.stringify({ userId: "me" });
+          const json = JSON.stringify({ message });
 
           const { stdout } = await spawnGwsRaw(gwsBinary, [
             "gmail", "users", "drafts", "create",
@@ -596,8 +587,8 @@ export function createServer(
 
           const { stdout } = await spawnGwsRaw(gwsBinary, [
             "drive", "permissions", "create",
-            "--params", escapeJsonArg(JSON.stringify(params)),
-            "--json", escapeJsonArg(JSON.stringify(body)),
+            "--params", JSON.stringify(params),
+            "--json", JSON.stringify(body),
           ], 30_000);
 
           return { content: [{ type: "text" as const, text: stdout || "(empty response)" }] };
@@ -648,8 +639,8 @@ export function createServer(
 
           const { stdout } = await spawnGwsRaw(gwsBinary, [
             "drive", "permissions", "create",
-            "--params", escapeJsonArg(JSON.stringify(params)),
-            "--json", escapeJsonArg(JSON.stringify(body)),
+            "--params", JSON.stringify(params),
+            "--json", JSON.stringify(body),
           ], 30_000);
 
           return { content: [{ type: "text" as const, text: stdout || "(empty response)" }] };

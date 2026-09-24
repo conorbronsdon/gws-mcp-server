@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
+import { fileURLToPath } from "node:url";
 import type { ToolDef } from "../services.js";
 
 // executeGws spawns the gws CLI via node:child_process's spawn(). Mock it so
@@ -10,9 +11,12 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { spawn } from "node:child_process";
-import { buildArgs, escapeForCmd, escapeJsonArg, sanitizeUploadPath, executeGws } from "../executor.js";
+import { buildArgs, sanitizeUploadPath, executeGws, spawnGwsRaw } from "../executor.js";
+import { GwsBinaryConfigurationError } from "../windows-binary.js";
 
-/** Minimal fake ChildProcess: an EventEmitter with EventEmitter stdout/stderr. */
+const mockGws = fileURLToPath(new URL("./fixtures/argv-dump.cjs", import.meta.url));
+
+/** Minimal fake ChildProcess with stdout and stderr emitters. */
 function makeFakeProc() {
   const proc = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter };
   proc.stdout = new EventEmitter();
@@ -20,94 +24,15 @@ function makeFakeProc() {
   return proc;
 }
 
-// ── escapeForCmd ────────────────────────────────────────────────────────
-
-describe("escapeForCmd", () => {
-  it("wraps value in double quotes", () => {
-    expect(escapeForCmd("hello")).toBe('"hello"');
-  });
-
-  it("escapes cmd.exe metacharacters with ^", () => {
-    const input = "a&b|c<d>e^f%g(h)i!j";
-    const result = escapeForCmd(input);
-    expect(result).toBe('"a^&b^|c^<d^>e^^f^%g^(h^)i^!j"');
-  });
-
-  it("escapes inner double quotes with backslash", () => {
-    expect(escapeForCmd('say "hi"')).toBe('"say \\"hi\\""');
-  });
-
-  it("doubles existing backslashes before inner double quotes", () => {
-    expect(escapeForCmd('say \\"hi\\"')).toBe('"say \\\\\\"hi\\\\\\""');
-  });
-
-  it("doubles trailing backslashes before the wrapper's closing quote", () => {
-    expect(escapeForCmd("C:\\temp\\")).toBe('"C:\\temp\\\\"');
-  });
-
-  // A run of n backslashes before a quote must become 2n+1. Doubling only the
-  // last one leaves an even count, and the child then reads the quote as a
-  // closing quote instead of a literal. JSON.stringify produces a two-backslash
-  // run for any value ending in a backslash, so this is the ordinary shape of
-  // a Windows path in --json, not an exotic input.
-  it("doubles the whole backslash run before an inner double quote", () => {
-    // value: {"p":"C:\"}  ->  JSON text: {"p":"C:\\"}
-    expect(escapeForCmd(JSON.stringify({ p: "C:\\" }))).toBe('"{\\"p\\":\\"C:\\\\\\\\\\"}"');
-    // three backslashes then a quote -> seven backslashes then a quote
-    expect(escapeForCmd('a\\\\\\"b')).toBe('"a\\\\\\\\\\\\\\"b"');
-  });
-
-  it("doubles the whole trailing backslash run", () => {
-    expect(escapeForCmd("C:\\temp\\\\")).toBe('"C:\\temp\\\\\\\\"');
-  });
-
-  it("handles empty string", () => {
-    expect(escapeForCmd("")).toBe('""');
-  });
-});
-
-// ── escapeJsonArg ───────────────────────────────────────────────────────
-
-describe("escapeJsonArg", () => {
-  it("returns raw string on non-win32 platforms", () => {
-    const originalPlatform = process.platform;
-    Object.defineProperty(process, "platform", { value: "linux" });
-    try {
-      expect(escapeJsonArg('{"key":"value"}')).toBe('{"key":"value"}');
-    } finally {
-      Object.defineProperty(process, "platform", { value: originalPlatform });
-    }
-  });
-
-  it("escapes via escapeForCmd on win32", () => {
-    const originalPlatform = process.platform;
-    Object.defineProperty(process, "platform", { value: "win32" });
-    try {
-      const result = escapeJsonArg('{"a":"b"}');
-      // Should be wrapped in quotes at minimum
-      expect(result.startsWith('"')).toBe(true);
-      expect(result.endsWith('"')).toBe(true);
-    } finally {
-      Object.defineProperty(process, "platform", { value: originalPlatform });
-    }
-  });
-});
-
-// ── sanitizeUploadPath ──────────────────────────────────────────────────
-
 describe("sanitizeUploadPath", () => {
-  it("rejects paths with path traversal (..)", () => {
+  it("rejects path traversal", () => {
     expect(() => sanitizeUploadPath("../etc/passwd")).toThrow("path traversal");
   });
 
-  it("rejects paths with cmd.exe metacharacters", () => {
-    expect(() => sanitizeUploadPath("file&name.txt")).toThrow("disallowed characters");
-  });
-
-  it("rejects paths with shell injection characters", () => {
-    expect(() => sanitizeUploadPath("file;name.txt")).toThrow("disallowed characters");
-    expect(() => sanitizeUploadPath("file`name.txt")).toThrow("disallowed characters");
-    expect(() => sanitizeUploadPath("file$name.txt")).toThrow("disallowed characters");
+  it("rejects disallowed upload path characters", () => {
+    for (const path of ["file&name.txt", "file;name.txt", "file`name.txt", "file$name.txt"]) {
+      expect(() => sanitizeUploadPath(path)).toThrow("disallowed characters");
+    }
   });
 
   it("rejects nonexistent files", () => {
@@ -115,24 +40,25 @@ describe("sanitizeUploadPath", () => {
   });
 });
 
-// ── buildArgs ───────────────────────────────────────────────────────────
+describe("spawnGwsRaw", () => {
+  it("passes argument values directly with the shell disabled", async () => {
+    const proc = makeFakeProc();
+    vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+    const value = 'R&D "quoted" \\';
+    const pending = spawnGwsRaw(mockGws, [value]);
+    const expectedArgs = process.platform === "win32" ? [mockGws, value] : [value];
+    const expectedCommand = process.platform === "win32" ? process.execPath : mockGws;
+    expect(spawn).toHaveBeenLastCalledWith(expectedCommand, expectedArgs, expect.objectContaining({ shell: false }));
+    proc.emit("close", 0);
+    await expect(pending).resolves.toEqual({ stdout: "", stderr: "" });
+  });
 
-/**
- * Helper to strip Windows cmd.exe escaping from a JSON arg produced by escapeJsonArg.
- * On win32, escapeJsonArg wraps in quotes and escapes metachars with ^.
- */
-function unescapeJsonArg(escaped: string): string {
-  let s = escaped;
-  // Strip surrounding double quotes
-  if (s.startsWith('"') && s.endsWith('"')) {
-    s = s.slice(1, -1);
-  }
-  // Remove ^ escape prefixes for cmd.exe metachars
-  s = s.replace(/\^([&|<>^%()!])/g, "$1");
-  // Unescape inner \" back to "
-  s = s.replace(/\\"/g, '"');
-  return s;
-}
+  it.skipIf(process.platform !== "win32")("rejects an unavailable binary before spawning", async () => {
+    vi.mocked(spawn).mockClear();
+    await expect(spawnGwsRaw(mockGws + ".missing.cmd", [])).rejects.toBeInstanceOf(GwsBinaryConfigurationError);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+});
 
 describe("buildArgs", () => {
   const baseTool: ToolDef = {
@@ -150,6 +76,12 @@ describe("buildArgs", () => {
     expect(args.slice(0, 3)).toEqual(["drive", "files", "list"]);
   });
 
+  it("keeps JSON parameter text unchanged", () => {
+    const value = 'R&D "quoted" \\';
+    const args = buildArgs(baseTool, { q: value });
+    expect(args[args.indexOf("--params") + 1]).toBe(JSON.stringify({ q: value }));
+  });
+
   it("merges defaultParams into --params", () => {
     const tool: ToolDef = {
       ...baseTool,
@@ -158,7 +90,7 @@ describe("buildArgs", () => {
     const args = buildArgs(tool, {});
     const paramsIdx = args.indexOf("--params");
     expect(paramsIdx).toBeGreaterThan(-1);
-    const parsed = JSON.parse(unescapeJsonArg(args[paramsIdx + 1]));
+    const parsed = JSON.parse(args[paramsIdx + 1]);
     expect(parsed.supportsAllDrives).toBe(true);
   });
 
@@ -172,7 +104,7 @@ describe("buildArgs", () => {
     };
     const args = buildArgs(tool, { supportsAllDrives: false });
     const paramsIdx = args.indexOf("--params");
-    const parsed = JSON.parse(unescapeJsonArg(args[paramsIdx + 1]));
+    const parsed = JSON.parse(args[paramsIdx + 1]);
     expect(parsed.supportsAllDrives).toBe(false);
   });
 
@@ -180,7 +112,7 @@ describe("buildArgs", () => {
     const args = buildArgs(baseTool, { q: "name contains 'test'" });
     const paramsIdx = args.indexOf("--params");
     expect(paramsIdx).toBeGreaterThan(-1);
-    const parsed = JSON.parse(unescapeJsonArg(args[paramsIdx + 1]));
+    const parsed = JSON.parse(args[paramsIdx + 1]);
     expect(parsed.q).toBe("name contains 'test'");
   });
 
@@ -194,7 +126,7 @@ describe("buildArgs", () => {
     const args = buildArgs(tool, { name: "myfile.txt" });
     const jsonIdx = args.indexOf("--json");
     expect(jsonIdx).toBeGreaterThan(-1);
-    const parsed = JSON.parse(unescapeJsonArg(args[jsonIdx + 1]));
+    const parsed = JSON.parse(args[jsonIdx + 1]);
     expect(parsed.name).toBe("myfile.txt");
   });
 
@@ -271,7 +203,7 @@ describe("executeGws", () => {
     const proc = makeFakeProc();
     vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
 
-    const resultPromise = executeGws(sheetsTool, {}, "gws");
+    const resultPromise = executeGws(sheetsTool, {}, mockGws);
     proc.stderr.emit("data", Buffer.from('{"error":{"code":429,"message":"Quota exceeded"}}'));
     proc.emit("close", 1);
 
@@ -285,7 +217,7 @@ describe("executeGws", () => {
     const proc = makeFakeProc();
     vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
 
-    const resultPromise = executeGws(driveTool, {}, "gws");
+    const resultPromise = executeGws(driveTool, {}, mockGws);
     proc.stderr.emit("data", Buffer.from("googleapi: Error 404: File not found: abc123"));
     proc.emit("close", 1);
 
@@ -299,7 +231,7 @@ describe("executeGws", () => {
     const proc = makeFakeProc();
     vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
 
-    const resultPromise = executeGws(sheetsTool, {}, "gws");
+    const resultPromise = executeGws(sheetsTool, {}, mockGws);
     proc.stderr.emit("data", Buffer.from("googleapi: Error 404: Spreadsheet not found: abc123"));
     proc.emit("close", 1);
 
@@ -312,7 +244,7 @@ describe("executeGws", () => {
     const proc = makeFakeProc();
     vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
 
-    const resultPromise = executeGws(driveTool, {}, "gws");
+    const resultPromise = executeGws(driveTool, {}, mockGws);
     proc.stderr.emit("data", Buffer.from("connect ECONNREFUSED 127.0.0.1:443"));
     proc.emit("close", 1);
 
@@ -325,7 +257,7 @@ describe("executeGws", () => {
     const proc = makeFakeProc();
     vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
 
-    const resultPromise = executeGws(driveTool, {}, "gws");
+    const resultPromise = executeGws(driveTool, {}, mockGws);
     proc.stdout.emit("data", Buffer.from('{"id": "abc123"}'));
     proc.emit("close", 0);
 
@@ -364,7 +296,7 @@ describe("executeGws logging", () => {
       const p = executeGws(
         sheetsUpdate,
         { spreadsheetId: SECRET_ID, values: SECRET_BODY },
-        "gws",
+        mockGws,
       );
       proc.stdout.emit("data", Buffer.from("{}"));
       proc.emit("close", 0);

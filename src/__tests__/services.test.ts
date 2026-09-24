@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
 import { getToolsForServices, SERVICE_TOOLS, ALL_SERVICES, DEFAULT_SERVICES, buildAnnotations, type ToolDef } from "../services.js";
-import { buildArgs, escapeJsonArg } from "../executor.js";
+import { buildArgs } from "../executor.js";
 import { buildZodSchema } from "../index.js";
 
 describe("getToolsForServices", () => {
@@ -194,9 +194,8 @@ describe("tasks update tools (patch semantics)", () => {
     expect(jsonIdx).toBeGreaterThan(-1);
     // Body must contain exactly the supplied field — nothing injected that
     // would overwrite notes/status/due on the server.
-    // Compare against the same escaping buildArgs applies, so this holds on
-    // Windows (cmd-escaped) as well as Linux/macOS (escapeJsonArg is a no-op).
-    expect(args[jsonIdx + 1]).toBe(escapeJsonArg(JSON.stringify({ title: "New title" })));
+    // Compare the JSON text passed directly on every platform.
+    expect(args[jsonIdx + 1]).toBe(JSON.stringify({ title: "New title" }));
   });
 
   it("no separate *_patch tools remain (one safe update verb per resource)", () => {
@@ -235,9 +234,8 @@ describe("calendar_events_update (patch semantics)", () => {
     expect(jsonIdx).toBeGreaterThan(-1);
     // Body must contain exactly the supplied field — start/end/description
     // stay untouched on the server.
-    // Compare against the same escaping buildArgs applies, so this holds on
-    // Windows (cmd-escaped) as well as Linux/macOS (escapeJsonArg is a no-op).
-    expect(args[jsonIdx + 1]).toBe(escapeJsonArg(JSON.stringify({ summary: "New title" })));
+    // Compare the JSON text passed directly on every platform.
+    expect(args[jsonIdx + 1]).toBe(JSON.stringify({ summary: "New title" }));
   });
 });
 
@@ -279,18 +277,14 @@ describe("calendar attendees + sendUpdates", () => {
     });
     const jsonIdx = args.indexOf("--json");
     expect(jsonIdx).toBeGreaterThan(-1);
-    // Cross-platform, same convention as the --json assertions above: compare
-    // the escaped string. On Windows escapeJsonArg cmd-quotes the value, so
-    // JSON.parse would return a string and property asserts degrade silently.
+    // Compare the complete JSON text.
     expect(args[jsonIdx + 1]).toBe(
-      escapeJsonArg(
-        JSON.stringify({
-          summary: "Standup",
-          start: { dateTime: "2026-03-10T10:00:00-07:00" },
-          end: { dateTime: "2026-03-10T10:30:00-07:00" },
-          attendees: [{ email: "a@x.com" }, { email: "b@x.com", optional: true }],
-        })
-      )
+      JSON.stringify({
+        summary: "Standup",
+        start: { dateTime: "2026-03-10T10:00:00-07:00" },
+        end: { dateTime: "2026-03-10T10:30:00-07:00" },
+        attendees: [{ email: "a@x.com" }, { email: "b@x.com", optional: true }],
+      }),
     );
   });
 
@@ -304,9 +298,9 @@ describe("calendar attendees + sendUpdates", () => {
     const paramsIdx = args.indexOf("--params");
     const jsonIdx = args.indexOf("--json");
     expect(args[paramsIdx + 1]).toBe(
-      escapeJsonArg(JSON.stringify({ calendarId: "primary", eventId: "evt123", sendUpdates: "all" }))
+      JSON.stringify({ calendarId: "primary", eventId: "evt123", sendUpdates: "all" })
     );
-    expect(args[jsonIdx + 1]).toBe(escapeJsonArg(JSON.stringify({ attendees: [{ email: "a@x.com" }] })));
+    expect(args[jsonIdx + 1]).toBe(JSON.stringify({ attendees: [{ email: "a@x.com" }] }));
   });
 
   it("both tools constrain sendUpdates to the closed set Google accepts", () => {
@@ -343,7 +337,7 @@ describe("calendar attendees + sendUpdates", () => {
       summary: "New title",
     });
     const jsonIdx = args.indexOf("--json");
-    expect(args[jsonIdx + 1]).toBe(escapeJsonArg(JSON.stringify({ summary: "New title" })));
+    expect(args[jsonIdx + 1]).toBe(JSON.stringify({ summary: "New title" }));
   });
 });
 
@@ -363,10 +357,9 @@ describe("drive_permissions_list (shared drives + grantee fields)", () => {
     const args = buildArgs(tool, { fileId: "file123" });
     const paramsIdx = args.indexOf("--params");
     expect(paramsIdx).toBeGreaterThan(-1);
-    // Compare against the same escaping buildArgs applies, so this holds on
-    // Windows (cmd-escaped) as well as Linux/macOS (escapeJsonArg is a no-op).
+    // Compare the JSON text passed directly on every platform.
     expect(args[paramsIdx + 1]).toBe(
-      escapeJsonArg(JSON.stringify({ supportsAllDrives: true, fileId: "file123" })),
+      JSON.stringify({ supportsAllDrives: true, fileId: "file123" }),
     );
   });
 
@@ -382,7 +375,7 @@ describe("drive_permissions_list (shared drives + grantee fields)", () => {
     const args = buildArgs(tool, { fileId: "file123", fields });
     const paramsIdx = args.indexOf("--params");
     expect(args[paramsIdx + 1]).toBe(
-      escapeJsonArg(JSON.stringify({ supportsAllDrives: true, fileId: "file123", fields })),
+      JSON.stringify({ supportsAllDrives: true, fileId: "file123", fields }),
     );
   });
 
@@ -390,14 +383,12 @@ describe("drive_permissions_list (shared drives + grantee fields)", () => {
     const args = buildArgs(tool, { fileId: "file123", pageSize: 100, pageToken: "tok" });
     const paramsIdx = args.indexOf("--params");
     expect(args[paramsIdx + 1]).toBe(
-      escapeJsonArg(
-        JSON.stringify({
-          supportsAllDrives: true,
-          fileId: "file123",
-          pageSize: 100,
-          pageToken: "tok",
-        }),
-      ),
+      JSON.stringify({
+        supportsAllDrives: true,
+        fileId: "file123",
+        pageSize: 100,
+        pageToken: "tok",
+      }),
     );
   });
 });
@@ -416,13 +407,12 @@ describe("drive_permissions_update (shared drives)", () => {
     const args = buildArgs(tool, { fileId: "file123", permissionId: "perm456", role: "writer" });
     const paramsIdx = args.indexOf("--params");
     expect(paramsIdx).toBeGreaterThan(-1);
-    // Compare against the same escaping buildArgs applies, so this holds on
-    // Windows (cmd-escaped) as well as Linux/macOS (escapeJsonArg is a no-op).
+    // Compare the JSON text passed directly on every platform.
     expect(args[paramsIdx + 1]).toBe(
-      escapeJsonArg(JSON.stringify({ supportsAllDrives: true, fileId: "file123", permissionId: "perm456" })),
+      JSON.stringify({ supportsAllDrives: true, fileId: "file123", permissionId: "perm456" }),
     );
     const jsonIdx = args.indexOf("--json");
-    expect(args[jsonIdx + 1]).toBe(escapeJsonArg(JSON.stringify({ role: "writer" })));
+    expect(args[jsonIdx + 1]).toBe(JSON.stringify({ role: "writer" }));
   });
 
   it("declares fields as an optional param — undeclared params are discarded", () => {
@@ -441,14 +431,12 @@ describe("drive_permissions_update (shared drives)", () => {
     });
     const paramsIdx = args.indexOf("--params");
     expect(args[paramsIdx + 1]).toBe(
-      escapeJsonArg(
-        JSON.stringify({
-          supportsAllDrives: true,
-          fileId: "file123",
-          permissionId: "perm456",
-          fields: "id,role,emailAddress",
-        }),
-      ),
+      JSON.stringify({
+        supportsAllDrives: true,
+        fileId: "file123",
+        permissionId: "perm456",
+        fields: "id,role,emailAddress",
+      }),
     );
   });
 });
@@ -461,7 +449,7 @@ describe("drive_permissions_delete (shared drives)", () => {
     const paramsIdx = args.indexOf("--params");
     expect(paramsIdx).toBeGreaterThan(-1);
     expect(args[paramsIdx + 1]).toBe(
-      escapeJsonArg(JSON.stringify({ supportsAllDrives: true, fileId: "file123", permissionId: "perm456" })),
+      JSON.stringify({ supportsAllDrives: true, fileId: "file123", permissionId: "perm456" }),
     );
     // Delete has no request body — nothing should be sent via --json.
     expect(args.indexOf("--json")).toBe(-1);
@@ -535,7 +523,7 @@ describe("drive_replies_create (resolve/reopen)", () => {
   it("sends action through to the request body, alongside content", () => {
     const args = buildArgs(tool, { fileId: "file123", commentId: "c1", action: "resolve", content: "done" });
     const jsonIdx = args.indexOf("--json");
-    expect(args[jsonIdx + 1]).toBe(escapeJsonArg(JSON.stringify({ content: "done", action: "resolve" })));
+    expect(args[jsonIdx + 1]).toBe(JSON.stringify({ content: "done", action: "resolve" }));
   });
 
   it("is additive, not destructive — resolving/reopening doesn't block replies or hide anything server-side", () => {
@@ -630,7 +618,7 @@ describe("people_connections_list (locked resourceName + sortOrder)", () => {
     const args = buildArgs(tool, { resourceName: "people/me", personFields: "names,emailAddresses" });
     const paramsIdx = args.indexOf("--params");
     expect(args[paramsIdx + 1]).toBe(
-      escapeJsonArg(JSON.stringify({ resourceName: "people/me", personFields: "names,emailAddresses" })),
+      JSON.stringify({ resourceName: "people/me", personFields: "names,emailAddresses" }),
     );
   });
 
@@ -665,9 +653,7 @@ describe("people_people_createContact / updateContact have no person wrapper", (
     });
     const jsonIdx = args.indexOf("--json");
     expect(args[jsonIdx + 1]).toBe(
-      escapeJsonArg(
-        JSON.stringify({ names: [{ givenName: "Jane" }], emailAddresses: [{ value: "jane@example.com" }] }),
-      ),
+      JSON.stringify({ names: [{ givenName: "Jane" }], emailAddresses: [{ value: "jane@example.com" }] }),
     );
     // The regression this pins: no "person" key anywhere in the body.
     expect(args[jsonIdx + 1]).not.toContain("\"person\"");
@@ -683,7 +669,7 @@ describe("people_people_createContact / updateContact have no person wrapper", (
     });
     const jsonIdx = args.indexOf("--json");
     expect(args[jsonIdx + 1]).toBe(
-      escapeJsonArg(JSON.stringify({ etag: "abc123", names: [{ givenName: "Jane" }] })),
+      JSON.stringify({ etag: "abc123", names: [{ givenName: "Jane" }] }),
     );
     expect(args[jsonIdx + 1]).not.toContain("\"person\"");
   });

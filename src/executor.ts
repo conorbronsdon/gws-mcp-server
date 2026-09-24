@@ -1,9 +1,7 @@
 /**
  * Executes gws CLI commands and returns results.
  *
- * Security: all user-supplied values are passed through sanitization to
- * prevent command injection, especially on Windows where shell:true is
- * required for .cmd wrappers.
+ * Argument values are passed directly to the child process on every platform.
  */
 
 import { spawn } from "node:child_process";
@@ -11,64 +9,21 @@ import { resolve, normalize } from "node:path";
 import { existsSync } from "node:fs";
 import type { ToolDef } from "./services.js";
 import { mapGwsErrorToTyped } from "./errors.js";
+import { resolveGwsCommand } from "./windows-binary.js";
 
 /** Max output size before truncation (characters) */
 const MAX_OUTPUT = 100_000;
 
-/** Characters that are dangerous in cmd.exe when shell:true */
-const CMD_METACHAR_RE = /[&|<>^%()!]/g;
-
-/**
- * Escape a string for safe use as a cmd.exe argument.
- * Wraps in double quotes and escapes inner quotes + metacharacters.
- */
-export function escapeForCmd(value: string): string {
-  // Windows' argv parser treats backslashes immediately before a quote as
-  // escape characters. Double that run before adding the quote escape so a
-  // JSON sequence such as \" survives as a backslash plus a literal quote,
-  // rather than becoming the invalid JSON sequence \B after cmd.exe parsing.
-  // Trailing backslashes need the same treatment because the wrapper's closing
-  // quote follows them. This is the standard CommandLineToArgvW quoting rule.
-  //
-  // The WHOLE run has to be doubled, so count it rather than match it: a run
-  // of n backslashes before a quote becomes 2n+1, and a trailing run becomes
-  // 2n. Doubling only the last backslash of a longer run leaves an even count
-  // in front of the quote, which the child reads as a closing quote, not a
-  // literal one. JSON.stringify emits exactly that run (`\\"`) for any string
-  // value ending in a backslash, such as a Windows path.
-  let quoted = "";
-  let backslashes = 0;
-  for (const ch of value) {
-    if (ch === "\\") {
-      backslashes++;
-      continue;
-    }
-    quoted += "\\".repeat(ch === '"' ? backslashes * 2 + 1 : backslashes) + ch;
-    backslashes = 0;
-  }
-  quoted += "\\".repeat(backslashes * 2);
-
-  return `"${quoted.replace(CMD_METACHAR_RE, "^$&")}"`;
-}
-
-/**
- * Escape a JSON string for passing as a CLI argument.
- * On Windows with shell:true, cmd.exe interprets metacharacters unless escaped.
- */
-export function escapeJsonArg(json: string): string {
-  if (process.platform === "win32") {
-    return escapeForCmd(json);
-  }
-  return json;
-}
+/** Characters disallowed in upload paths */
+const UPLOAD_DISALLOWED_RE = /[&|<>^%()!]/;
 
 /**
  * Validate and sanitize a file upload path.
  * Rejects paths containing shell metacharacters or path traversal sequences.
  */
 export function sanitizeUploadPath(rawPath: string): string {
-  // Reject shell metacharacters
-  if (CMD_METACHAR_RE.test(rawPath) || /[;`$]/.test(rawPath)) {
+  // Reject disallowed path characters
+  if (UPLOAD_DISALLOWED_RE.test(rawPath) || /[;`$]/.test(rawPath)) {
     throw new Error(`Upload path contains disallowed characters: ${rawPath}`);
   }
 
@@ -112,7 +67,7 @@ export function buildArgs(
     }
   }
   if (Object.keys(params).length > 0) {
-    cliArgs.push("--params", escapeJsonArg(JSON.stringify(params)));
+    cliArgs.push("--params", JSON.stringify(params));
   }
 
   // Collect --json (request body)
@@ -135,18 +90,14 @@ export function buildArgs(
       }
     }
     if (Object.keys(body).length > 0) {
-      cliArgs.push("--json", escapeJsonArg(JSON.stringify(body)));
+      cliArgs.push("--json", JSON.stringify(body));
     }
   }
 
   // File upload — validate path before passing to CLI
   if (tool.supportsUpload && args.uploadPath) {
     const safePath = sanitizeUploadPath(String(args.uploadPath));
-    if (process.platform === "win32") {
-      cliArgs.push("--upload", escapeForCmd(safePath));
-    } else {
-      cliArgs.push("--upload", safePath);
-    }
+    cliArgs.push("--upload", safePath);
   }
 
   return cliArgs;
@@ -162,9 +113,21 @@ export function spawnGwsRaw(
   timeoutMs: number = 30_000,
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(gwsBinary, args, {
+    let command = gwsBinary;
+    let childArgs = args;
+    if (process.platform === "win32") {
+      try {
+        const resolved = resolveGwsCommand(gwsBinary);
+        command = resolved.command;
+        childArgs = [...resolved.prefix, ...args];
+      } catch (error) {
+        reject(error);
+        return;
+      }
+    }
+    const proc = spawn(command, childArgs, {
       stdio: ["ignore", "pipe", "pipe"],
-      shell: process.platform === "win32",
+      shell: false,
       timeout: timeoutMs,
     });
 
