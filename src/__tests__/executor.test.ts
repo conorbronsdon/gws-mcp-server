@@ -45,6 +45,22 @@ describe("escapeForCmd", () => {
     expect(escapeForCmd("C:\\temp\\")).toBe('"C:\\temp\\\\"');
   });
 
+  // A run of n backslashes before a quote must become 2n+1. Doubling only the
+  // last one leaves an even count, and the child then reads the quote as a
+  // closing quote instead of a literal. JSON.stringify produces a two-backslash
+  // run for any value ending in a backslash, so this is the ordinary shape of
+  // a Windows path in --json, not an exotic input.
+  it("doubles the whole backslash run before an inner double quote", () => {
+    // value: {"p":"C:\"}  ->  JSON text: {"p":"C:\\"}
+    expect(escapeForCmd(JSON.stringify({ p: "C:\\" }))).toBe('"{\\"p\\":\\"C:\\\\\\\\\\"}"');
+    // three backslashes then a quote -> seven backslashes then a quote
+    expect(escapeForCmd('a\\\\\\"b')).toBe('"a\\\\\\\\\\\\\\"b"');
+  });
+
+  it("doubles the whole trailing backslash run", () => {
+    expect(escapeForCmd("C:\\temp\\\\")).toBe('"C:\\temp\\\\\\\\"');
+  });
+
   it("handles empty string", () => {
     expect(escapeForCmd("")).toBe('""');
   });
@@ -201,6 +217,31 @@ describe("buildArgs", () => {
     };
     const args = buildArgs(tool, {});
     expect(args.includes("--json")).toBe(false);
+  });
+
+  // Drive types a comment's `anchor` as a string that happens to hold JSON.
+  // Without literalString, buildArgs decoded it and sent an object, which the
+  // API rejects — so the documented usage of drive_comments_create's anchor
+  // could never succeed.
+  it("sends a literalString body param as the string it is", () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "linux" });
+    try {
+      const tool: ToolDef = {
+        ...baseTool,
+        bodyParams: [
+          { name: "anchor", description: "region", type: "string", required: false, literalString: true },
+          { name: "requests", description: "array", type: "string", required: false },
+        ],
+      };
+      const args = buildArgs(tool, { anchor: '{"line":10}', requests: '[{"a":1}]' });
+      const body = JSON.parse(args[args.indexOf("--json") + 1]);
+      expect(body.anchor).toBe('{"line":10}');
+      // Negative control: an ordinary string param is still decoded.
+      expect(body.requests).toEqual([{ a: 1 }]);
+    } finally {
+      Object.defineProperty(process, "platform", { value: originalPlatform });
+    }
   });
 });
 

@@ -1065,3 +1065,21 @@ describe("slides service shape", () => {
     }
   });
 });
+
+// The unit test in executor.test.ts proves literalString works on a synthetic
+// ToolDef; this proves the real registry entry carries the flag, which is the
+// half a refactor of services.ts would silently drop.
+describe("drive_comments_create anchor", () => {
+  it("reaches the request body as a string, not a decoded object", () => {
+    const tool = getToolsForServices(["drive"]).find((t) => t.name === "drive_comments_create")!;
+    const anchor = JSON.stringify({ line: 10 });
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "linux" });
+    try {
+      const args = buildArgs(tool, { fileId: "f1", fields: "id", content: "hi", anchor });
+      expect(JSON.parse(args[args.indexOf("--json") + 1])).toEqual({ content: "hi", anchor });
+    } finally {
+      Object.defineProperty(process, "platform", { value: originalPlatform });
+    }
+  });
+});
