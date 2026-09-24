@@ -292,7 +292,11 @@ npm test        # vitest, mocks the executor layer — no real gws calls
 
 ## Contributing
 
-Issues and pull requests are welcome. The most useful contributions are new tool definitions in `src/services.ts` for high-value `gws` operations (see "Adding new tools" above). Keep the curated contract: a focused set of narrowly scoped tools, not a 1:1 mirror of every Google API surface. See [SECURITY.md](./SECURITY.md) for how to report vulnerabilities.
+Issues and pull requests are welcome. Keep the curated contract: a focused set of narrowly scoped tools, not a 1:1 mirror of every Google API surface. Before writing a PR for a **new service**, open an issue describing the use case, required scopes and side effects; [docs/scope-policy.md](./docs/scope-policy.md) explains what belongs here and what fits better as a companion server. Improvements to existing tools are welcome directly. See [SECURITY.md](./SECURITY.md) for how to report vulnerabilities.
+
+### Companion servers
+
+Services outside the curated set can ship as separate MCP servers that run alongside this one, each with its own scope grant. Community companion servers that declare side effects on every tool and add no freestanding send action will be listed here.
 
 ## Other options
 
