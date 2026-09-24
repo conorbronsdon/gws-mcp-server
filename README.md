@@ -2,6 +2,8 @@
 
 # gws-mcp-server
 
+> **Maintenance mode.** This project is stable and receives security fixes. New features aren't planned, but issues and pull requests are still welcome.
+
 Google Workspace for AI agents: Gmail, Calendar, Drive, Sheets, Docs, Slides, Tasks, and Contacts as a curated set of 67 [Model Context Protocol](https://modelcontextprotocol.io/) tools, built on the official [Google Workspace CLI (`gws`)](https://github.com/googleworkspace/cli).
 
 [![npm version](https://img.shields.io/npm/v/gws-mcp-server?style=flat-square)](https://www.npmjs.com/package/gws-mcp-server)
