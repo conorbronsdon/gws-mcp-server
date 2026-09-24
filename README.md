@@ -332,7 +332,7 @@ Built and maintained by [Conor Bronsdon](https://github.com/conorbronsdon). I ho
 
 Companion tools:
 
-- [Transistor-MCP](https://github.com/conorbronsdon/Transistor-MCP): the Transistor.fm MCP server. Episodes, transcripts, and download counts.
+- [Transistor MCP](https://mcp.transistor.fm): Transistor.fm's official MCP server. Episodes, publishing, and analytics.
 - [substack-mcp](https://github.com/conorbronsdon/substack-mcp): read posts and manage drafts on Substack, safe for agent workflows.
 - [podcastindex-mcp](https://github.com/conorbronsdon/podcastindex-mcp): the Podcast Index MCP server, search by person or topic, trending shows, feed health.
 - [op3-mcp](https://github.com/conorbronsdon/op3-mcp): podcast analytics through OP3. Downloads, geography, apps. Read-only.
