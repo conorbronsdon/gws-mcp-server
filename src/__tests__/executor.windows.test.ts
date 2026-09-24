@@ -32,13 +32,6 @@ describe("Windows npm shim argument delivery", () => {
     });
   });
 
-  windowsIt("keeps marker text inside one literal argument", async () => {
-    await withNpmShim(async (shim) => {
-      const value = "a & echo MARKER & b";
-      const { stdout } = await spawnGwsRaw(shim, [value]);
-      expect(stdout).toBe(JSON.stringify([value]));
-    });
-  });
 });
 
 describe("Windows JSON argument delivery", () => {

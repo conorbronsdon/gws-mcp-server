@@ -29,7 +29,10 @@ function findBinary(binary: string): string | undefined {
   const extensions = [".exe", ".cmd", ".bat", ".js", ".cjs", ".mjs"];
   const candidates = extname(binary) ? [binary] : extensions.map((ext) => binary + ext);
   const explicit = isAbsolute(binary) || /[\\/]/.test(binary);
-  const dirs = explicit ? [""] : (process.env.PATH || "").split(delimiter);
+  const dirs = explicit ? [""] : (process.env.PATH || "")
+        .split(delimiter)
+        .map((dir) => dir.replace(/^"(.*)"$/, "$1"))
+        .filter((dir) => dir && isAbsolute(dir));
 
   for (const dir of dirs) {
     for (const candidate of candidates) {
