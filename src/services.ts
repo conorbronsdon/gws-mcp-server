@@ -105,6 +105,11 @@ export interface ParamDef {
   /** Closed set of accepted values (string params only). Enforced at the tool
    *  boundary via z.enum, so an out-of-set value never reaches the wire. */
   enum?: string[];
+  /** Body params only: send the value as the literal string it is. Without
+   *  this, buildArgs JSON-parses any string that decodes to an object or array
+   *  (how `requests`/`attendees` reach the API as arrays). Set it for fields
+   *  the API itself types as a string holding JSON, e.g. a comment `anchor`. */
+  literalString?: boolean;
 }
 
 // ── Drive ──────────────────────────────────────────────────────────────
@@ -308,7 +313,7 @@ const driveTools: ToolDef[] = [
     ],
     bodyParams: [
       { name: "content", description: "Comment text", type: "string", required: true },
-      { name: "anchor", description: "App-defined region JSON string, optional (e.g. '{\"line\":10}')", type: "string", required: false },
+      { name: "anchor", description: "App-defined region JSON string, optional (e.g. '{\"line\":10}')", type: "string", required: false, literalString: true },
     ],
   },
   {
@@ -904,11 +909,13 @@ const tasksTools: ToolDef[] = [
 // repo's own demonstrated skepticism toward tools that add weight for
 // marginal value (issues #32/#36/#45).
 //
-// Needs a scope this server's default gws auth login doesn't request:
-// run `gws auth login -s people` once before using these tools (README
-// documents this). Not something this service can detect or prompt for
-// itself — the tool just errors with an auth/permission failure until
-// the scope is granted.
+// Needs the `contacts` scope, which this server's default gws auth login
+// doesn't request. A filtered login (`-s people`) REPLACES the saved
+// credential rather than adding to it, so the grant has to be redone with
+// the full intended scope list plus Contacts — the README's "Contacts needs
+// a scope outside the default grant" section is the source of truth. Not
+// something this service can detect or prompt for itself — the tool just
+// errors with an auth/permission failure until the scope is granted.
 //
 // personFields/readMask/updatePersonFields are declared required:true
 // despite the People API's own Discovery schema marking them

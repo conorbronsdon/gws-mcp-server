@@ -47,6 +47,30 @@ describe("Windows cmd.exe JSON argument round-trip", () => {
     });
   });
 
+  // JSON.stringify turns a value ending in a backslash into `\\"`: a run of
+  // two backslashes before the closing quote. The whole run has to be doubled;
+  // doubling only the last backslash let the child read that quote as a real
+  // closing quote, so the JSON arrived truncated and later fields split into
+  // separate argv entries. Asserting the full argv pins both halves.
+  windowsIt("preserves values ending in a backslash, and keeps one argv entry per flag", async () => {
+    const tool: ToolDef = {
+      name: "calendar_events_insert",
+      description: "test",
+      command: ["calendar", "events", "insert"],
+      params: [],
+      bodyParams: [
+        { name: "summary", description: "summary", type: "string", required: true },
+        { name: "description", description: "description", type: "string", required: false },
+      ],
+    };
+    const input = { summary: "C:\\Users\\conor\\", description: "two words" };
+
+    const { stdout } = await spawnGwsRaw(argvDump, buildArgs(tool, input));
+    const childArgs = JSON.parse(stdout) as string[];
+
+    expect(childArgs).toEqual(["calendar", "events", "insert", "--json", JSON.stringify(input)]);
+  });
+
   windowsIt("reproduces the pre-fix corrupted child argv as a negative control", async () => {
     const json = JSON.stringify({ summary: 'Bob "BB" sync' });
     const { stdout } = await spawnGwsRaw(argvDump, [
