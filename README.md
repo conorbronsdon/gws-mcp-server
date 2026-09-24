@@ -129,8 +129,10 @@ append `people` to the service list:
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--services, -s` | Comma-separated list of services to expose | Core services; `people` is opt-in |
-| `--gws-path` | Path to the `gws` binary | `gws` |
+| `--gws-path` | Path to the `gws` binary | `GWS_BINARY` or `gws` |
 | `--read-only` | Register only the read-only tools | off |
+
+On Windows, npm's `gws.cmd` is resolved to its JavaScript entry point and run with Node. `--gws-path` or `GWS_BINARY` may also point directly to a JavaScript entry point or `.exe`.
 
 ### `--read-only`
 

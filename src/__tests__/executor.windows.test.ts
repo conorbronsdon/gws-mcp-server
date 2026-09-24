@@ -1,21 +1,47 @@
 import { describe, expect, it } from "vitest";
 import { fileURLToPath } from "node:url";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import type { ToolDef } from "../services.js";
 import { buildArgs, spawnGwsRaw } from "../executor.js";
+import { GwsBinaryConfigurationError, resolveGwsCommand } from "../windows-binary.js";
 
 const windowsIt = process.platform === "win32" ? it : it.skip;
 const argvDump = fileURLToPath(new URL("./fixtures/argv-dump.cmd", import.meta.url));
 
-// The escapeForCmd implementation before #37. Keeping it in this Windows-only
-// regression test proves the fixture reaches the exact known-bad child argv;
-// it must never be used by production code.
-function legacyEscapeForCmd(value: string): string {
-  return `"${value
-    .replace(/[&|<>^%()!]/g, "^$&")
-    .replace(/"/g, '\\"')}"`;
+function withNpmShim<T>(run: (shim: string) => Promise<T>): Promise<T> {
+  const dir = mkdtempSync(join(tmpdir(), "gws-argv-"));
+  const script = join(dir, "argv.cjs");
+  const shim = join(dir, "gws.cmd");
+  writeFileSync(script, "process.stdout.write(JSON.stringify(process.argv.slice(2)));\n");
+  writeFileSync(shim, '@ECHO off\r\nSETLOCAL\r\nSET "dp0=%~dp0"\r\nSET "_prog=node"\r\n"%_prog%" "%dp0%\\argv.cjs" %*\r\n');
+  return run(shim).finally(() => rmSync(dir, { recursive: true, force: true }));
 }
 
-describe("Windows cmd.exe JSON argument round-trip", () => {
+describe("Windows npm shim argument delivery", () => {
+  windowsIt("round-trips arbitrary argument values", async () => {
+    await withNpmShim(async (shim) => {
+      const values = [
+        "&", "|", "<", ">", "^", "%", "!", '"', "\\", "\n", "\t", "R&D", "trailing\\",
+        JSON.stringify({ q: 'a & b | < > ^ % ! " \\ \n \t R&D \\' }),
+      ];
+      const { stdout } = await spawnGwsRaw(shim, values);
+      expect(JSON.parse(stdout)).toEqual(values);
+      expect(stdout).toBe(JSON.stringify(values));
+    });
+  });
+
+  windowsIt("keeps marker text inside one literal argument", async () => {
+    await withNpmShim(async (shim) => {
+      const value = "a & echo MARKER & b";
+      const { stdout } = await spawnGwsRaw(shim, [value]);
+      expect(stdout).toBe(JSON.stringify([value]));
+    });
+  });
+});
+
+describe("Windows JSON argument delivery", () => {
   windowsIt("preserves literal double quotes in both --json and --params", async () => {
     const tool: ToolDef = {
       name: "calendar_events_insert",
@@ -47,11 +73,6 @@ describe("Windows cmd.exe JSON argument round-trip", () => {
     });
   });
 
-  // JSON.stringify turns a value ending in a backslash into `\\"`: a run of
-  // two backslashes before the closing quote. The whole run has to be doubled;
-  // doubling only the last backslash let the child read that quote as a real
-  // closing quote, so the JSON arrived truncated and later fields split into
-  // separate argv entries. Asserting the full argv pins both halves.
   windowsIt("preserves values ending in a backslash, and keeps one argv entry per flag", async () => {
     const tool: ToolDef = {
       name: "calendar_events_insert",
@@ -71,16 +92,61 @@ describe("Windows cmd.exe JSON argument round-trip", () => {
     expect(childArgs).toEqual(["calendar", "events", "insert", "--json", JSON.stringify(input)]);
   });
 
-  windowsIt("reproduces the pre-fix corrupted child argv as a negative control", async () => {
-    const json = JSON.stringify({ summary: 'Bob "BB" sync' });
-    const { stdout } = await spawnGwsRaw(argvDump, [
-      "--json",
-      legacyEscapeForCmd(json),
-    ]);
-    const childArgs = JSON.parse(stdout) as string[];
-    const corrupted = childArgs[1];
+});
 
-    expect(corrupted).toBe('{"summary":"Bob \\BB\\ sync"}');
-    expect(() => JSON.parse(corrupted)).toThrow();
+describe("Windows gws binary resolution", () => {
+  windowsIt("resolves an npm-style shim to Node and its script", async () => {
+    await withNpmShim(async (shim) => {
+      expect(resolveGwsCommand(shim)).toEqual({
+        command: process.execPath,
+        prefix: [join(dirname(shim), "argv.cjs")],
+      });
+    });
+  });
+
+  windowsIt("finds a shim on PATH", async () => {
+    await withNpmShim(async (shim) => {
+      const previous = process.env.PATH;
+      process.env.PATH = `${dirname(shim)};${previous || ""}`;
+      try {
+        expect(resolveGwsCommand("gws")).toEqual({
+          command: process.execPath,
+          prefix: [join(dirname(shim), "argv.cjs")],
+        });
+      } finally {
+        if (previous === undefined) delete process.env.PATH;
+        else process.env.PATH = previous;
+      }
+    });
+  });
+
+  windowsIt("runs an exe directly", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gws-exe-"));
+    try {
+      const exe = join(dir, "gws.exe");
+      writeFileSync(exe, "");
+      expect(resolveGwsCommand(exe)).toEqual({ command: exe, prefix: [] });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  windowsIt("reports a typed error for an unavailable binary", async () => {
+    const missing = join(tmpdir(), "gws-unavailable", "gws.cmd");
+    expect(() => resolveGwsCommand(missing)).toThrow(GwsBinaryConfigurationError);
+    await expect(spawnGwsRaw(missing, [])).rejects.toMatchObject({
+      code: "GWS_BINARY_CONFIGURATION",
+    });
+  });
+
+  windowsIt("rejects a shim without a readable JavaScript entry point", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gws-shim-"));
+    try {
+      const shim = join(dir, "gws.cmd");
+      writeFileSync(shim, "@ECHO off\r\nexit /b 0\r\n");
+      expect(() => resolveGwsCommand(shim)).toThrow(GwsBinaryConfigurationError);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
