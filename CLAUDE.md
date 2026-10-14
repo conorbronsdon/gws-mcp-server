@@ -7,6 +7,7 @@ MCP server that exposes Google Workspace CLI (gws) as Model Context Protocol too
 - `src/services.ts` — Declarative tool definitions across 8 services (drive, sheets, calendar, docs, slides, gmail, tasks, people). Each entry maps to a `gws` CLI command + params/body. `DEFAULT_SERVICES` is the no-flag set; `people` is supported but opt-in because it needs an extra OAuth scope.
 - `src/executor.ts` — Command builder and runner with security hardening (shell injection prevention, path validation).
 - `src/errors.ts` — Typed error hierarchy; `mapGwsErrorToTyped()` recovers a status code from gws's plain-text stderr.
+- `src/auth.ts` — `gws-mcp-server auth login -s <services>`: reads the saved credential's scopes from `gws auth status`, merges in the services' scopes and runs `gws auth login --scopes <union>` (gws's own `-s` replaces the credential, #68). Dispatched from `main()` when argv[2] is `auth`.
 - `src/mime.ts` — RFC 2822 builder + base64url encoding for `gmail_drafts_create`. Includes CRLF-injection guard on header values.
 - `src/__tests__/` — Vitest tests: one file per source module, plus an in-memory MCP client suite, a Windows-only npm-shim argument round-trip, and a publish-workflow check.
 
@@ -31,6 +32,7 @@ Most tests are unit tests mocking the executor layer. No test hits the real gws 
 - `services.test.ts` — Tool registry integrity, tool uniqueness, param validation
 - `mime.test.ts` — base64url, RFC 2047 header encoding, RFC 2822 message construction, CRLF-injection guard
 - `errors.test.ts` — Typed error hierarchy, gws error-detail extraction, status mapping
+- `auth.test.ts` — Incremental `auth login` against an in-memory fake token store, plus one run through real child processes with `fixtures/fake-gws.cjs` (a file-backed stand-in for `gws auth status/login`)
 - `annotations.e2e.test.ts` — Real MCP client over an in-memory transport: annotation hints on every tool, `--read-only`, default vs opt-in services, README/server.json counts
 - `executor.windows.test.ts` — Windows-only: round-trips argument values through an npm-style `.cmd` shim (`fixtures/argv-dump.cmd`) with `shell: false`
 - `publish-workflow.test.ts` — Registry gate in `.github/workflows/publish.yml`

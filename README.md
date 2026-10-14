@@ -44,7 +44,7 @@ So the token on disk can send mail and rewrite Drive even though nothing here wi
 gws auth login --readonly    # read-only across services
 ```
 
-`-s gmail` limits the picker to Gmail, per the flag's own help text ("Comma-separated service names to limit scope picker"). It cannot pull in `cloud-platform` or `pubsub`, because those two are reachable only through `--full`.
+`-s gmail` limits the picker to Gmail, per the flag's own help text ("Comma-separated service names to limit scope picker"). It cannot pull in `cloud-platform` or `pubsub`, because those two are reachable only through `--full`. It also **replaces** any credential you already have rather than adding to it. To add a service to an existing login, use [`gws-mcp-server auth login`](#contacts-needs-a-scope-outside-the-default-grant).
 
 **On Linux there is no keyring, and the encryption key is a file next to the data it encrypts.** `gws` enables the `keyring` crate's native backends only for macOS and Windows; on every other platform the dependency is declared with no backend feature, so the store falls through to writing `.encryption_key` into `~/.config/gws/`. That file is not a backup of a key held elsewhere — it is the key, and the credential store's own doc comment says it is never deleted. Setting `GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file` changes nothing there because that is already the only path. On macOS and Windows the key file is removed once the OS keyring holds the key. **If you run this headless on Linux, treat `~/.config/gws/` as a password file: anyone who can read the directory has the credentials.**
 
@@ -52,15 +52,30 @@ gws auth login --readonly    # read-only across services
 
 The `people_*` tools need the `contacts` scope, which the default `gws auth login` (and the seven-scope grant described above) does not request.
 
-**A filtered login replaces the saved credential; it does not add scopes to it.** Do not run `gws auth login -s people` expecting it to preserve Drive, Gmail, Calendar, or other existing grants. If `gws auth status` shows a `scopes` array, save it before reauthenticating. That field is discovered live and can be absent when token refresh or Google's token-info lookup is unavailable; unknown custom grants cannot be recovered from the saved credential. If it is absent, stop and reconstruct the intended scope set from your original provisioning notes or backup instead of guessing.
+**Add Contacts with `gws-mcp-server auth login -s people`, not `gws auth login -s people`.** gws's own filtered login replaces the saved credential with only the filtered scopes, so it drops Drive, Gmail, Calendar and everything else you had granted ([#68](https://github.com/conorbronsdon/gws-mcp-server/issues/68), tracked upstream in [googleworkspace/cli#673](https://github.com/googleworkspace/cli/issues/673)). This server's `auth login` does incremental authorization instead:
 
-If you know the credential used exactly the default seven scopes described above, re-grant those seven plus Contacts explicitly:
+```bash
+gws-mcp-server auth login -s people              # keep existing scopes, add contacts
+gws-mcp-server auth login -s people --dry-run    # print the gws command first
+```
+
+It reads the scopes the saved credential holds from `gws auth status`, adds the requested services' scopes, and runs `gws auth login --scopes <existing + new>`. You consent once in the browser, and afterwards it re-reads `gws auth status` and exits non-zero if any scope you asked for (old or new) wasn't granted, for example because a box was unticked on Google's consent screen. It needs a client configured for `gws auth login` already, and it exits without changing anything if the credential already covers the services.
+
+| Flag | Effect |
+|------|--------|
+| `--services, -s <list>` | Services whose scopes to add (required) |
+| `--readonly` | Add each service's read-only scope (skipped when the read-write scope is already held) |
+| `--dry-run` | Print the `gws auth login` command without running it |
+| `--replace` | The old behaviour: replace the credential with only the requested scopes |
+| `--gws-path <path>` | gws binary, same as the server flag |
+
+`gws auth status` discovers scopes live (refresh-token exchange plus Google's token-info lookup), so the `scopes` field can be missing when that fails. When a saved credential exists but its scopes can't be read, `auth login` refuses rather than guessing; fix the status lookup and retry. If you really mean to start over with only the requested scopes, pass `--replace`. With no saved credential at all it is a first login and requests just the services you name.
+
+If you prefer to run gws directly, pass the complete list yourself. For a credential that used exactly the default seven scopes described above:
 
 ```bash
 gws auth login --scopes "https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/spreadsheets,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/documents,https://www.googleapis.com/auth/presentations,https://www.googleapis.com/auth/tasks,https://www.googleapis.com/auth/contacts"
 ```
-
-For a custom or narrower grant, use its known complete intended scope list plus Contacts instead. Run `gws auth status` afterward and exercise the services you expect to use; never treat a missing `scopes` field as proof that the old grants were preserved.
 
 The People API must also be enabled on your own GCP project — a one-time step separate from OAuth, since a new scope grant doesn't enable a new API by itself:
 
