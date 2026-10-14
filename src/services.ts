@@ -910,12 +910,12 @@ const tasksTools: ToolDef[] = [
 // marginal value (issues #32/#36/#45).
 //
 // Needs the `contacts` scope, which this server's default gws auth login
-// doesn't request. A filtered login (`-s people`) REPLACES the saved
-// credential rather than adding to it, so the grant has to be redone with
-// the full intended scope list plus Contacts — the README's "Contacts needs
-// a scope outside the default grant" section is the source of truth. Not
-// something this service can detect or prompt for itself — the tool just
-// errors with an auth/permission failure until the scope is granted.
+// doesn't request. gws's filtered login (`gws auth login -s people`) REPLACES
+// the saved credential rather than adding to it; `gws-mcp-server auth login
+// -s people` (src/auth.ts) merges contacts into the existing grant instead.
+// The README's "Contacts needs a scope outside the default grant" section is
+// the source of truth. The tools themselves can't detect or prompt for the
+// scope; they error with an auth/permission failure until it is granted.
 //
 // personFields/readMask/updatePersonFields are declared required:true
 // despite the People API's own Discovery schema marking them

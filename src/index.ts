@@ -8,6 +8,7 @@
  *
  * Usage:
  *   gws-mcp-server [--services drive,sheets,calendar,docs,slides,gmail,tasks] [--gws-path /path/to/gws]
+ *   gws-mcp-server auth login --services people   # add scopes to the saved gws credential
  *
  * In .mcp.json:
  *   {
@@ -30,6 +31,7 @@ import { getToolsForServices, ALL_SERVICES, DEFAULT_SERVICES, buildAnnotations, 
 import { executeGws, spawnGwsRaw } from "./executor.js";
 import { resolveGwsCommand } from "./windows-binary.js";
 import { buildRfc2822, base64url } from "./mime.js";
+import { runAuthCli } from "./auth.js";
 
 // ── Package metadata ───────────────────────────────────────────────────
 
@@ -85,9 +87,15 @@ OPTIONS:
                           writes to Google is exposed at all.
   --help, -h              Show this help
 
+COMMANDS:
+  auth login -s <list>    Add services' scopes to the saved gws credential
+                          without dropping the ones it already has
+                          (see: gws-mcp-server auth --help)
+
 EXAMPLE:
   gws-mcp-server --services drive,sheets,calendar
   gws-mcp-server --read-only
+  gws-mcp-server auth login -s people
 `);
       process.exit(0);
     }
@@ -262,6 +270,11 @@ export function makeTmpFileName(prefix: string): string {
 // ── Main ───────────────────────────────────────────────────────────────
 
 async function main() {
+  if (process.argv[2] === "auth") {
+    process.exitCode = await runAuthCli(process.argv.slice(3));
+    return;
+  }
+
   const { services, gwsBinary, readOnly } = parseArgs();
 
   const gwsAvailable = validateGwsBinary(gwsBinary);
