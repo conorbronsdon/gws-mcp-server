@@ -13,3 +13,19 @@ updates:
       - dependency-name: node
         update-types:
           - version-update:semver-major
+
+  # npm security updates arrive as one grouped PR (minor and patch). Major bumps stay
+  # separate so they get a deliberate look. Version updates stay off (limit 0).
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
