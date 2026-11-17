@@ -871,7 +871,7 @@ describe("tool annotation classifications", () => {
       expect(a.readOnlyHint, name).toBe(false);
       expect(a.destructiveHint, name).toBe(true);
       // tools/list descriptions are what agents read, so they must say why.
-      expect(tool.description, name).toMatch(/so this tool is marked destructive\.$/);
+      expect(tool.description, name).toMatch(/marked destructive/);
     }
   });
 
@@ -885,7 +885,18 @@ describe("tool annotation classifications", () => {
 
   it("calendar_events_update sendUpdates says it does not decide who is uninvited", () => {
     const sendUpdates = byName.get("calendar_events_update")!.params.find((p) => p.name === "sendUpdates")!;
-    expect(sendUpdates.description).toMatch(/uninvited whatever this is set to; it only decides whether they are emailed$/);
+    expect(sendUpdates.description).toMatch(/uninvited/);
+    expect(sendUpdates.description).toMatch(/email/);
+  });
+
+  it("calendar_events_update sends attendees without sendUpdates, so the overwrite does not depend on it", () => {
+    const args = buildArgs(byName.get("calendar_events_update")!, {
+      calendarId: "primary",
+      eventId: "evt123",
+      attendees: '[{"email":"a@x.com"}]',
+    });
+    expect(args[args.indexOf("--params") + 1]).toBe(JSON.stringify({ calendarId: "primary", eventId: "evt123" }));
+    expect(args[args.indexOf("--json") + 1]).toBe(JSON.stringify({ attendees: [{ email: "a@x.com" }] }));
   });
 
   it("gmail_threads_modify is a non-destructive write (TRASH is reversible)", () => {

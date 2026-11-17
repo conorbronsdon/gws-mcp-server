@@ -180,7 +180,7 @@ const driveTools: ToolDef[] = [
   },
   {
     name: "drive_files_update",
-    description: "Update a file's metadata or content. An uploadPath replaces the file's content and no copy of the old content is kept, so this tool is marked destructive.",
+    description: "Update a file's metadata or content. An uploadPath replaces the file's content and no copy of the old content is kept. Because it can do that, the whole tool is marked destructive, including calls without uploadPath.",
     command: ["drive", "files", "update"],
     params: [
       { name: "fileId", description: "The file ID to update", type: "string", required: true },
@@ -334,7 +334,7 @@ const driveTools: ToolDef[] = [
     bodyParams: [
       { name: "content", description: "New comment text", type: "string", required: true, literalString: true },
     ],
-    // Matches drive_permissions_update/drive_files_update: repeating the
+    // Idempotency matches drive_permissions_update/drive_files_update: repeating the
     // same content leaves the comment in the same end state.
     destructive: true,
     idempotent: true,
@@ -409,7 +409,7 @@ const driveTools: ToolDef[] = [
     bodyParams: [
       { name: "content", description: "New reply text", type: "string", required: true, literalString: true },
     ],
-    // Matches drive_permissions_update/drive_files_update: repeating the
+    // Idempotency matches drive_permissions_update/drive_files_update: repeating the
     // same content leaves the reply in the same end state.
     destructive: true,
     idempotent: true,
@@ -546,7 +546,7 @@ const calendarTools: ToolDef[] = [
   },
   {
     name: "calendar_events_update",
-    description: "Update an existing calendar event with patch semantics (only supplied fields change). attendees replaces the whole list and anyone omitted is uninvited, so this tool is marked destructive.",
+    description: "Update an existing calendar event with patch semantics (only supplied fields change). attendees replaces the whole list and anyone omitted is uninvited. Because it can do that, the whole tool is marked destructive, including calls without attendees.",
     command: ["calendar", "events", "patch"],
     params: [
       { name: "calendarId", description: "Calendar ID", type: "string", required: true },
@@ -988,7 +988,7 @@ const peopleTools: ToolDef[] = [
       { name: "phoneNumbers", description: "Array of PhoneNumber objects as JSON string", type: "string", required: false },
       { name: "organizations", description: "Array of Organization objects as JSON string", type: "string", required: false },
     ],
-    // Matches drive_permissions_update/drive_files_update: repeating the
+    // Idempotency matches drive_permissions_update/drive_files_update: repeating the
     // same update leaves the contact in the same end state. destructive
     // because replacing e.g. emailAddresses/phoneNumbers wholesale removes
     // whatever was there before, not just an additive change.
