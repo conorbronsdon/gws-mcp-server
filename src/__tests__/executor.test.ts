@@ -1,7 +1,7 @@
 import { afterAll, describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { fileURLToPath } from "node:url";
-import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import type { ToolDef } from "../services.js";
@@ -14,7 +14,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { spawn } from "node:child_process";
-import { buildArgs, sanitizeUploadPath, executeGws, spawnGwsRaw } from "../executor.js";
+import { buildArgs, sanitizeUploadPath, executeGws, spawnGwsRaw, writeSaveFile } from "../executor.js";
 import { GwsBinaryConfigurationError } from "../windows-binary.js";
 
 const mockGws = fileURLToPath(new URL("./fixtures/argv-dump.cjs", import.meta.url));
@@ -495,5 +495,37 @@ describe("executeGws logging", () => {
     } finally {
       delete process.env.GWS_MCP_DEBUG;
     }
+  });
+});
+
+// A path checked by resolveSavePath can be swapped before the write. These call
+// writeSaveFile directly on the swapped-in state.
+describe("writeSaveFile", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "gws-save-")));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("writes a new file and replaces an existing one", () => {
+    const p = join(dir, "plain.bin");
+    writeSaveFile(p, Buffer.from("first-longer"));
+    writeSaveFile(p, Buffer.from("second"));
+    expect(readFileSync(p, "utf-8")).toBe("second");
+  });
+
+  it("refuses a hard link swapped in after the check and leaves the other file intact", () => {
+    const outside = join(dir, "outside-secret.json");
+    writeFileSync(outside, "example-secret-not-real");
+    const p = join(dir, "swapped-hardlink.bin");
+    linkSync(outside, p);
+    expect(() => writeSaveFile(p, Buffer.from("x"))).toThrow(/no longer a plain file/);
+    expect(readFileSync(outside, "utf-8")).toBe("example-secret-not-real");
+  });
+
+  it("refuses a symlink swapped in after the check and leaves its target intact", (ctx) => {
+    const target = join(dir, "symlink-target.json");
+    writeFileSync(target, "example-secret-not-real");
+    const p = join(dir, "swapped-symlink.bin");
+    try { symlinkSync(target, p, "file"); } catch { ctx.skip(); }
+    expect(() => writeSaveFile(p, Buffer.from("x"))).toThrow();
+    expect(readFileSync(target, "utf-8")).toBe("example-secret-not-real");
   });
 });

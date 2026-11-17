@@ -6,7 +6,7 @@
 
 import { spawn } from "node:child_process";
 import { resolve, normalize, relative, isAbsolute, sep, dirname, basename, join } from "node:path";
-import { closeSync, constants, existsSync, lstatSync, openSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, ftruncateSync, lstatSync, openSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import type { ToolDef } from "./services.js";
 import { mapGwsErrorToTyped } from "./errors.js";
 import { resolveGwsCommand } from "./windows-binary.js";
@@ -131,12 +131,19 @@ export function resolveSavePath(rawPath: string, root: string = process.cwd()): 
 }
 
 /**
- * Write `data` to a path from `resolveSavePath`, refusing to follow a symlink
- * that appeared after the check (O_NOFOLLOW; not available on Windows).
+ * Write `data` to a path from `resolveSavePath`. The file is opened without
+ * truncating and re-checked before any byte changes, so a symlink or hard link
+ * swapped in after the check is refused. O_NOFOLLOW (not on Windows) also stops
+ * the open itself from following a symlink.
  */
 export function writeSaveFile(path: string, data: Buffer): void {
-  const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0));
+  const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0));
   try {
+    const st = fstatSync(fd);
+    if (!st.isFile() || st.nlink > 1 || lstatSync(path).isSymbolicLink()) {
+      throw new Error(`Save path changed after it was checked and is no longer a plain file: ${path}`);
+    }
+    ftruncateSync(fd, 0);
     writeFileSync(fd, data); // loops until every byte is written; a bare writeSync may stop short
   } finally {
     closeSync(fd);
