@@ -107,19 +107,23 @@ describe("advertised annotations", () => {
     expect(SERVER_VERSION).toBe(pkg.version);
   });
 
-  it("advertises tools that remove data or capabilities as destructive", () => {
+  it("advertises tools that remove or overwrite data or capabilities as destructive", () => {
     // tasks_tasks_clear is in this list and is not a *_delete: it permanently
-    // removes completed tasks from a list, so it belongs here.
+    // removes completed tasks from a list, so it belongs here. The *_update
+    // tools that replace user data wholesale (cell values, file content, the
+    // attendee list) are here too (#94): the previous values are not kept.
     const destructive = tools
       .filter((t) => t.annotations?.destructiveHint === true)
       .map((t) => t.name)
       .sort();
     expect(destructive).toEqual([
       "calendar_events_delete",
+      "calendar_events_update",
       "docs_batchUpdate",
       "drive_comments_delete",
       "drive_comments_update",
       "drive_files_delete",
+      "drive_files_update",
       "drive_permissions_delete",
       "drive_permissions_transferOwnership",
       "drive_permissions_update",
@@ -128,6 +132,7 @@ describe("advertised annotations", () => {
       "people_people_deleteContact",
       "people_people_updateContact",
       "sheets_batchUpdate",
+      "sheets_values_update",
       "slides_batchUpdate",
       "tasks_tasklists_delete",
       "tasks_tasks_clear",

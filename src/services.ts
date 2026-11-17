@@ -192,6 +192,8 @@ const driveTools: ToolDef[] = [
     ],
     supportsUpload: true,
     defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
+    // destructive: with uploadPath this replaces the file's content.
+    destructive: true,
     idempotent: true,
   },
   {
@@ -463,6 +465,8 @@ const sheetsTools: ToolDef[] = [
     bodyParams: [
       { name: "values", description: "2D array of values as JSON string (e.g. '[[\"A\",\"B\"],[\"C\",\"D\"]]')", type: "string", required: true },
     ],
+    // destructive: overwrites whatever was in the range; no copy is kept.
+    destructive: true,
     idempotent: true,
   },
   {
@@ -558,6 +562,9 @@ const calendarTools: ToolDef[] = [
     ],
     // Not marked idempotent since sendUpdates landed: with "all"/"externalOnly",
     // every retry re-emails all attendees — an additional effect per call.
+    // destructive: attendees replaces the whole list, uninviting anyone
+    // omitted (with cancellation emails when sendUpdates is set).
+    destructive: true,
   },
   {
     name: "calendar_events_delete",
