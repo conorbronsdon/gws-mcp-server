@@ -94,6 +94,13 @@ describe("sanitizeUploadPath file root", () => {
     expect(() => sanitizeUploadPath(link, root)).toThrow("hard link");
   });
 
+  it("also refuses a file hard-linked twice inside the root, since nlink cannot see where the other name is", () => {
+    const original = join(root, "twice.txt");
+    writeFileSync(original, "in root");
+    linkSync(original, join(root, "twice-copy.txt"));
+    expect(() => sanitizeUploadPath(original, root)).toThrow("hard link");
+  });
+
   it("buildArgs passes the checked real path to --upload and refuses an out-of-root path", () => {
     expect(buildArgs(uploadTool, { uploadPath: inRoot }, root)).toEqual([
       "drive", "files", "create", "--upload", realpathSync.native(inRoot),

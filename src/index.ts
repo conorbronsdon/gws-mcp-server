@@ -97,7 +97,9 @@ OPTIONS:
                           writes to Google is exposed at all.
   --file-root <dir>       Directory that local file paths (uploadPath,
                           savePath) must resolve inside, symlinks followed
-                          (default: the working directory)
+                          (default: the working directory). Current gws
+                          builds also confine --upload to the working
+                          directory, so start the server from this directory
   --help, -h              Show this help
 
 COMMANDS:

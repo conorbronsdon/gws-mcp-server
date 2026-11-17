@@ -24,7 +24,14 @@ const UPLOAD_DISALLOWED_RE = /[&|<>^%()!]/;
  * builds confine `--upload` and `-o`.
  */
 export function resolveFileRoot(root: string = process.cwd()): string {
-  const real = realpathSync.native(resolve(root));
+  let real: string;
+  try {
+    real = realpathSync.native(resolve(root));
+  } catch {
+    throw new Error(
+      `File root is not accessible: ${root}. Start the server with a valid --file-root.`,
+    );
+  }
   if (!statSync(real).isDirectory()) {
     throw new Error(`File root is not a directory: ${root}`);
   }
