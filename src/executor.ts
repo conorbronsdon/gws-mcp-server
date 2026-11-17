@@ -28,8 +28,11 @@ export function resolveFileRoot(root: string = process.cwd()): string {
   try {
     real = realpathSync.native(resolve(root));
   } catch {
+    // A default root that could not be resolved at startup is still ".", and
+    // process.cwd() itself throws once the working directory is gone.
+    const label = root === "." ? "the server's working directory" : root;
     throw new Error(
-      `File root is not accessible: ${root}. Start the server with a valid --file-root.`,
+      `File root is not accessible: ${label}. Start the server with a valid --file-root.`,
     );
   }
   if (!statSync(real).isDirectory()) {
@@ -91,7 +94,10 @@ export function sanitizeUploadPath(rawPath: string, root: string = process.cwd()
     throw new Error(`Upload path is not a regular file: ${rawPath}`);
   }
   if (st.nlink > 1) {
-    throw new Error(`Upload path is a hard link (${st.nlink} links), so it may alias a file outside the file root: ${rawPath}`);
+    throw new Error(
+      `Upload path is a hard link (${st.nlink} links), so it may alias a file outside the file root: ${rawPath}. ` +
+        "Upload a plain copy instead (cp without -l or -a).",
+    );
   }
 
   return real;
@@ -111,7 +117,12 @@ export function resolveSavePath(rawPath: string, root: string = process.cwd()): 
   if (!existsSync(parent)) {
     throw new Error(`Save directory does not exist: ${parent}`);
   }
-  const realParent = realpathSync.native(parent);
+  let realParent: string;
+  try {
+    realParent = realpathSync.native(parent);
+  } catch {
+    throw new Error(`Save directory does not exist: ${parent}`);
+  }
   if (realParent !== realRoot && !isInsideRoot(realParent, realRoot)) {
     throw new Error(
       `Save path is outside the file root (${realRoot}): ${rawPath}. ` +
@@ -138,13 +149,22 @@ export function resolveSavePath(rawPath: string, root: string = process.cwd()): 
 }
 
 /**
- * Write `data` to a path from `resolveSavePath`. A new file is created with
- * O_EXCL, so nothing is created through a symlink swapped in after the check.
- * An existing file is opened without O_CREAT or truncation and re-checked
- * before any byte changes, so a symlink or hard link swapped in is refused.
- * O_NOFOLLOW (not on Windows) also stops the open itself following a symlink.
+ * Write `data` to a path from `resolveSavePath`, which is `<real parent>/<name>`.
+ * A new file is created with O_EXCL, so nothing is created through a symlink
+ * swapped in after the check. An existing file is opened without O_CREAT or
+ * truncation. Before any byte changes, the opened file must still be a plain
+ * file, the parent's real path must be unchanged, and the path must still name
+ * the opened inode, so a symlink, hard link or parent directory swapped in is
+ * refused. O_NOFOLLOW (not on Windows) also stops the open following a symlink.
  */
 export function writeSaveFile(path: string, data: Buffer): void {
+  const parent = dirname(path);
+  const parentChanged = () =>
+    new Error(`Save directory changed after it was checked: ${parent}`);
+  const realOrNull = (p: string) => {
+    try { return realpathSync.native(p); } catch { return null; }
+  };
+  if (realOrNull(parent) !== parent) throw parentChanged();
   const nofollow = constants.O_NOFOLLOW ?? 0;
   let fd: number;
   try {
@@ -154,9 +174,15 @@ export function writeSaveFile(path: string, data: Buffer): void {
     fd = openSync(path, constants.O_WRONLY | nofollow);
   }
   try {
-    const st = fstatSync(fd);
-    if (!st.isFile() || st.nlink > 1 || lstatSync(path).isSymbolicLink()) {
+    const st = fstatSync(fd, { bigint: true });
+    if (!st.isFile() || st.nlink > 1n || lstatSync(path).isSymbolicLink()) {
       throw new Error(`Save path changed after it was checked and is no longer a plain file: ${path}`);
+    }
+    // The open may have gone through a parent swapped in after the check above.
+    let now;
+    try { now = statSync(path, { bigint: true }); } catch { throw parentChanged(); }
+    if (realOrNull(parent) !== parent || now.dev !== st.dev || now.ino !== st.ino) {
+      throw parentChanged();
     }
     ftruncateSync(fd, 0);
     writeFileSync(fd, data); // loops until every byte is written; a bare writeSync may stop short

@@ -52,8 +52,9 @@ export const SERVER_VERSION: string = JSON.parse(
 
 // ── CLI argument parsing ───────────────────────────────────────────────
 
-function parseArgs(): { services: string[]; gwsBinary: string; readOnly: boolean; fileRoot: string } {
-  const args = process.argv.slice(2);
+export function parseArgs(
+  args: string[] = process.argv.slice(2),
+): { services: string[]; gwsBinary: string; readOnly: boolean; fileRoot: string } {
   let services = [...DEFAULT_SERVICES];
   let gwsBinary = process.env.GWS_BINARY || "gws";
   let readOnly = false;
@@ -96,8 +97,9 @@ OPTIONS:
   --read-only             Register only the read-only tools. No tool that
                           writes to Google is exposed at all.
   --file-root <dir>       Directory that local file paths (uploadPath,
-                          savePath) must resolve inside, symlinks followed
-                          (default: the working directory). Current gws
+                          savePath) must resolve inside. An uploadPath
+                          symlink is followed; a savePath symlink is
+                          refused (default: the working directory). Current gws
                           builds also confine --upload to the working
                           directory, so start the server from this directory
   --help, -h              Show this help
