@@ -121,7 +121,10 @@ function validateGwsBinary(gwsBinary: string): boolean {
     } else {
       try {
         execFileSync("which", [gwsBinary], { stdio: "ignore" });
-      } catch {
+      } catch (error) {
+        // `which` exits non-zero when the binary is not on PATH. If `which` itself
+        // is missing (ENOENT), keep that error rather than blaming gws.
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") throw error;
         throw new Error(gwsNotFoundMessage(gwsBinary));
       }
     }

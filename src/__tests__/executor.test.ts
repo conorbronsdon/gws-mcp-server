@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ToolDef } from "../services.js";
 
 // executeGws spawns the gws CLI via node:child_process's spawn(). Mock it so
@@ -12,7 +14,7 @@ vi.mock("node:child_process", () => ({
 
 import { spawn } from "node:child_process";
 import { buildArgs, sanitizeUploadPath, executeGws, gwsNotFoundMessage, spawnGwsRaw } from "../executor.js";
-import { GwsBinaryConfigurationError } from "../windows-binary.js";
+import { GwsBinaryConfigurationError, resolveGwsCommand } from "../windows-binary.js";
 
 const mockGws = fileURLToPath(new URL("./fixtures/argv-dump.cjs", import.meta.url));
 
@@ -82,13 +84,23 @@ describe("spawnGwsRaw", () => {
     await expect(pending).rejects.toBe(eacces);
   });
 
+  it("names the package to install when the Windows resolver cannot find the binary", () => {
+    // resolveGwsCommand is the Windows startup and spawn path; its lookup is plain fs, so this runs everywhere.
+    const missing = join(tmpdir(), "gws-missing-install-hint", "gws.cmd");
+    expect(() => resolveGwsCommand(missing)).toThrow(GwsBinaryConfigurationError);
+    expect(() => resolveGwsCommand(missing)).toThrow(/npm install -g @googleworkspace\/cli/);
+    expect(() => resolveGwsCommand(missing)).toThrow(/GWS_BINARY or --gws-path/);
+  });
+
   it("executeGws returns the not-found message as the tool error", async () => {
     const proc = makeFakeProc();
     vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
     const pending = executeGws(
       { name: "drive_files_list", description: "test", command: ["drive", "files", "list"], params: [] },
       {},
-      // A path that resolves on Windows too, so the spawn mock is reached there.
+      // A file that exists, so Windows resolution succeeds and the spawn mock is reached.
+      // This exercises the ENOENT handler only; a missing binary on Windows is caught
+      // earlier by resolveGwsCommand (see the Windows resolver test above).
       mockGws,
     );
     proc.emit("error", Object.assign(new Error("spawn gws ENOENT"), { code: "ENOENT" }));
