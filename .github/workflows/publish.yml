@@ -70,16 +70,18 @@ jobs:
 
       # npm can take a minute or more to serve a version it just accepted, and both
       # mcp-publisher (it checks the npm package version) and the GitHub release need
-      # it. Wait (bounded) here, before either. Ungated on purpose: on a catch-up or
-      # no-op run the version is already on npm and the first check passes at once.
+      # it. Wait (bounded) here, before either. Only when the version step found the
+      # version unpublished: when changed is false that step already saw npm serve it,
+      # and polling then could turn an npm outage into a failed no-op run.
       - name: Wait for npm to serve this version
+        if: steps.version.outputs.changed == 'true'
         env:
           VERSION: ${{ steps.version.outputs.local }}
         run: |
           PKG="$(node -p "require('./package.json').name")"
           for attempt in $(seq 1 10); do
             [ "$(npm view "$PKG@$VERSION" version 2>/dev/null)" = "$VERSION" ] && break
-            [ "$attempt" = 10 ] && { echo "::error::$PKG@$VERSION is still not on npm after ~5 minutes; not publishing to the MCP registry or creating a GitHub release for an unpublished version. Re-run the workflow once npm serves it."; exit 1; }
+            [ "$attempt" = 10 ] && { echo "::error::$PKG@$VERSION is still not on npm after ~5 minutes; not publishing to the MCP registry or creating a GitHub release for an unpublished version. Once npm serves it, start Publish manually (workflow_dispatch): a plain re-run of this push skips the registry leg."; exit 1; }
             sleep 30
           done
           echo "npm serves $PKG@$VERSION."
@@ -161,8 +163,9 @@ jobs:
             echo "::error::Could not check for release v$VERSION: $VIEW"
             exit 1
           fi
-          # "Wait for npm to serve this version" above has already confirmed npm serves
-          # it, so this never creates a release for an unpublished version.
+          # npm serves this version by now: "Wait for npm to serve this version" confirmed
+          # it when changed is true, and the version step's own npm check did when
+          # changed is false. So this never creates a release for an unpublished version.
           # Target main's own commit that set this version (first parent, so a merge
           # commit counts), not whatever HEAD is when a catch-up runs.
           # Escape every ERE metacharacter in the version (dots, and "+" in build metadata).
