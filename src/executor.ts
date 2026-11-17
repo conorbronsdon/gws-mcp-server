@@ -5,8 +5,8 @@
  */
 
 import { spawn } from "node:child_process";
-import { resolve, normalize } from "node:path";
-import { existsSync } from "node:fs";
+import { resolve, normalize, relative, isAbsolute, sep, dirname, basename, join } from "node:path";
+import { closeSync, constants, existsSync, fstatSync, ftruncateSync, lstatSync, openSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import type { ToolDef } from "./services.js";
 import { mapGwsErrorToTyped } from "./errors.js";
 import { resolveGwsCommand } from "./windows-binary.js";
@@ -18,29 +18,177 @@ const MAX_OUTPUT = 100_000;
 const UPLOAD_DISALLOWED_RE = /[&|<>^%()!]/;
 
 /**
- * Validate and sanitize a file upload path.
- * Rejects paths containing shell metacharacters or path traversal sequences.
+ * The real path of the directory local file paths must stay inside.
+ *
+ * Defaults to the server's working directory, which is also where current gws
+ * builds confine `--upload` and `-o`.
  */
-export function sanitizeUploadPath(rawPath: string): string {
+export function resolveFileRoot(root: string = process.cwd()): string {
+  let real: string;
+  try {
+    real = realpathSync.native(resolve(root));
+  } catch {
+    // A default root that could not be resolved at startup is still ".", and
+    // process.cwd() itself throws once the working directory is gone.
+    const label = root === "." ? "the server's working directory" : root;
+    throw new Error(
+      `File root is not accessible: ${label}. Start the server with a valid --file-root.`,
+    );
+  }
+  if (!statSync(real).isDirectory()) {
+    throw new Error(`File root is not a directory: ${root}`);
+  }
+  return real;
+}
+
+/**
+ * Whether `realPath` sits strictly below `realRoot`. Both must already be real
+ * paths. Uses `relative()` rather than a prefix compare, so `/a/root-x` is not
+ * inside `/a/root`, and a path on another Windows drive (where `relative()`
+ * returns an absolute path) is refused.
+ */
+export function isInsideRoot(realPath: string, realRoot: string): boolean {
+  const rel = relative(realRoot, realPath);
+  return !(rel === "" || isAbsolute(rel) || rel === ".." || rel.startsWith(".." + sep));
+}
+
+/**
+ * Validate and sanitize a file upload path.
+ * Rejects paths containing shell metacharacters or path traversal sequences,
+ * and any file whose real path (symlinks resolved) is outside `root`. A
+ * relative path is resolved against `root`. Returns the real path, so a
+ * symlink swapped in later is not followed to a new target. gws opens the path
+ * itself, so a process that can write inside the root could still swap the file
+ * between this check and the upload.
+ */
+export function sanitizeUploadPath(rawPath: string, root: string = process.cwd()): string {
   // Reject disallowed path characters
   if (UPLOAD_DISALLOWED_RE.test(rawPath) || /[;`$]/.test(rawPath)) {
     throw new Error(`Upload path contains disallowed characters: ${rawPath}`);
   }
 
-  // Resolve to absolute and normalize (collapses ../ etc.)
-  const resolved = resolve(normalize(rawPath));
-
-  // Reject if the resolved path still contains traversal indicators
+  // Reject if the raw path contains traversal indicators
   if (rawPath.includes("..")) {
     throw new Error(`Upload path must not contain path traversal (..): ${rawPath}`);
   }
+
+  const realRoot = resolveFileRoot(root);
+  const resolved = resolve(realRoot, normalize(rawPath));
 
   // Verify the file exists
   if (!existsSync(resolved)) {
     throw new Error(`Upload file does not exist: ${resolved}`);
   }
 
-  return resolved;
+  const real = realpathSync.native(resolved);
+  if (!isInsideRoot(real, realRoot)) {
+    throw new Error(
+      `Upload path is outside the file root (${realRoot}): ${rawPath}. ` +
+        "Move the file under the root, or start the server with --file-root <dir>.",
+    );
+  }
+  // A hard link shares its inode with a file that may live outside the root,
+  // and realpath cannot tell. Refuse any file with more than one link.
+  const st = statSync(real);
+  if (!st.isFile()) {
+    throw new Error(`Upload path is not a regular file: ${rawPath}`);
+  }
+  if (st.nlink > 1) {
+    throw new Error(
+      `Upload path is a hard link (${st.nlink} links), so it may alias a file outside the file root: ${rawPath}. ` +
+        "Upload a plain copy instead (cp without -l or -a).",
+    );
+  }
+
+  return real;
+}
+
+/**
+ * Validate a local destination for downloaded bytes (`drive_files_download`
+ * `savePath`). A relative path resolves against `root`. The parent directory
+ * must exist and its real path must be the root or inside it. An existing
+ * target must be a regular file with a single link: a symlink or hard link
+ * could alias a file outside the root. Returns the path to write.
+ */
+export function resolveSavePath(rawPath: string, root: string = process.cwd()): string {
+  const realRoot = resolveFileRoot(root);
+  const target = resolve(realRoot, rawPath);
+  const parent = dirname(target);
+  if (!existsSync(parent)) {
+    throw new Error(`Save directory does not exist: ${parent}`);
+  }
+  let realParent: string;
+  try {
+    realParent = realpathSync.native(parent);
+  } catch {
+    throw new Error(`Save directory does not exist: ${parent}`);
+  }
+  if (realParent !== realRoot && !isInsideRoot(realParent, realRoot)) {
+    throw new Error(
+      `Save path is outside the file root (${realRoot}): ${rawPath}. ` +
+        "Save under the root, or start the server with --file-root <dir>.",
+    );
+  }
+  const final = join(realParent, basename(target));
+  let st;
+  try {
+    st = lstatSync(final);
+  } catch {
+    return final;
+  }
+  if (st.isSymbolicLink()) {
+    throw new Error(`Save path is a symlink, which may point outside the file root: ${rawPath}`);
+  }
+  if (!st.isFile()) {
+    throw new Error(`Save path exists and is not a regular file: ${rawPath}`);
+  }
+  if (st.nlink > 1) {
+    throw new Error(`Save path is a hard link (${st.nlink} links), so it may alias a file outside the file root: ${rawPath}`);
+  }
+  return final;
+}
+
+/**
+ * Write `data` to a path from `resolveSavePath`, which is `<real parent>/<name>`.
+ * A new file is created with O_EXCL, so nothing is created through a symlink
+ * swapped in after the check. An existing file is opened without O_CREAT or
+ * truncation. Before any byte changes, the opened file must still be a plain
+ * file, the parent's real path must be unchanged, and the path must still name
+ * the opened inode, so a symlink, hard link or parent directory swapped in is
+ * refused. O_NOFOLLOW (not on Windows) also stops the open following a symlink.
+ */
+export function writeSaveFile(path: string, data: Buffer): void {
+  const parent = dirname(path);
+  const parentChanged = () =>
+    new Error(`Save directory changed after it was checked: ${parent}`);
+  const realOrNull = (p: string) => {
+    try { return realpathSync.native(p); } catch { return null; }
+  };
+  if (realOrNull(parent) !== parent) throw parentChanged();
+  const nofollow = constants.O_NOFOLLOW ?? 0;
+  let fd: number;
+  try {
+    fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | nofollow);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+    fd = openSync(path, constants.O_WRONLY | nofollow);
+  }
+  try {
+    const st = fstatSync(fd, { bigint: true });
+    if (!st.isFile() || st.nlink > 1n || lstatSync(path).isSymbolicLink()) {
+      throw new Error(`Save path changed after it was checked and is no longer a plain file: ${path}`);
+    }
+    // The open may have gone through a parent swapped in after the check above.
+    let now;
+    try { now = statSync(path, { bigint: true }); } catch { throw parentChanged(); }
+    if (realOrNull(parent) !== parent || now.dev !== st.dev || now.ino !== st.ino) {
+      throw parentChanged();
+    }
+    ftruncateSync(fd, 0);
+    writeFileSync(fd, data); // loops until every byte is written; a bare writeSync may stop short
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export interface ExecResult {
@@ -55,6 +203,7 @@ export interface ExecResult {
 export function buildArgs(
   tool: ToolDef,
   args: Record<string, unknown>,
+  fileRoot: string = process.cwd(),
 ): string[] {
   const cliArgs = [...tool.command];
 
@@ -96,7 +245,7 @@ export function buildArgs(
 
   // File upload — validate path before passing to CLI
   if (tool.supportsUpload && args.uploadPath) {
-    const safePath = sanitizeUploadPath(String(args.uploadPath));
+    const safePath = sanitizeUploadPath(String(args.uploadPath), fileRoot);
     cliArgs.push("--upload", safePath);
   }
 
@@ -210,8 +359,9 @@ export async function executeGws(
   tool: ToolDef,
   args: Record<string, unknown>,
   gwsBinary: string,
+  fileRoot: string = process.cwd(),
 ): Promise<ExecResult> {
-  const cliArgs = buildArgs(tool, args);
+  const cliArgs = buildArgs(tool, args, fileRoot);
 
   // Log the subcommand only. cliArgs carries --params and --json, which hold
   // the full request body: spreadsheet cell values, inserted document text,

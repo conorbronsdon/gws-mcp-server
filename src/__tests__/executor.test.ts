@@ -1,8 +1,9 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterAll, describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { fileURLToPath } from "node:url";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import type { ToolDef } from "../services.js";
 
 // executeGws spawns the gws CLI via node:child_process's spawn(). Mock it so
@@ -13,7 +14,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { spawn } from "node:child_process";
-import { buildArgs, sanitizeUploadPath, executeGws, gwsNotFoundMessage, spawnGwsRaw } from "../executor.js";
+import { buildArgs, sanitizeUploadPath, isInsideRoot, executeGws, gwsNotFoundMessage, spawnGwsRaw, writeSaveFile } from "../executor.js";
 import { GwsBinaryConfigurationError, resolveGwsCommand } from "../windows-binary.js";
 
 const mockGws = fileURLToPath(new URL("./fixtures/argv-dump.cjs", import.meta.url));
@@ -39,6 +40,123 @@ describe("sanitizeUploadPath", () => {
 
   it("rejects nonexistent files", () => {
     expect(() => sanitizeUploadPath("/nonexistent/path/to/file.txt")).toThrow("does not exist");
+  });
+});
+
+describe("isInsideRoot", () => {
+  const r = join(tmpdir(), "gws-root");
+  it("is true only for paths strictly below the root", () => {
+    expect(isInsideRoot(join(r, "a.txt"), r)).toBe(true);
+    expect(isInsideRoot(join(r, "sub", "a.txt"), r)).toBe(true);
+    expect(isInsideRoot(r, r)).toBe(false);
+    expect(isInsideRoot(r + sep, r)).toBe(false);
+    expect(isInsideRoot(`${r}-sibling${sep}a.txt`, r)).toBe(false);
+    expect(isInsideRoot(join(r, "..", "a.txt"), r)).toBe(false);
+    expect(isInsideRoot(dirname(r), r)).toBe(false);
+  });
+
+  it.runIf(process.platform === "win32")("is false for a path on another drive", () => {
+    expect(isInsideRoot("D:\\root\\a.txt", "C:\\root")).toBe(false);
+  });
+});
+
+describe("sanitizeUploadPath file root", () => {
+  // Layout: <base>/root is the file root; <base>/root-sibling and <base>/outside
+  // sit next to it. The sibling shares the root's string prefix.
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "gws-upload-root-")));
+  const root = join(base, "root");
+  const outside = join(base, "outside");
+  const sibling = join(base, "root-sibling");
+  for (const d of [root, join(root, "sub"), outside, sibling]) mkdirSync(d, { recursive: true });
+  const inRoot = join(root, "sub", "report.txt");
+  const secret = join(outside, "example-client_secret.json");
+  const siblingFile = join(sibling, "file.txt");
+  for (const f of [inRoot, secret, siblingFile]) writeFileSync(f, "example");
+  const uploadTool: ToolDef = {
+    name: "drive_files_create", description: "", command: ["drive", "files", "create"],
+    params: [], supportsUpload: true,
+  };
+
+  afterAll(() => rmSync(base, { recursive: true, force: true }));
+
+  it("accepts an absolute path inside the root and returns its real path", () => {
+    expect(sanitizeUploadPath(inRoot, root)).toBe(realpathSync.native(inRoot));
+  });
+
+  it("refuses an absolute path outside the root", () => {
+    expect(() => sanitizeUploadPath(secret, root)).toThrow("outside the file root");
+  });
+
+  it("refuses a directory that only shares the root's name prefix", () => {
+    expect(() => sanitizeUploadPath(siblingFile, root)).toThrow("outside the file root");
+  });
+
+  it("refuses the root directory itself", () => {
+    expect(() => sanitizeUploadPath(root, root)).toThrow("outside the file root");
+  });
+
+  it("resolves a relative path against the root, not the server's working directory", () => {
+    expect(sanitizeUploadPath(join("sub", "report.txt"), root)).toBe(realpathSync.native(inRoot));
+    expect(() => sanitizeUploadPath(relative(root, secret), root)).toThrow();
+  });
+
+  it("defaults the root to the working directory", () => {
+    expect(() => sanitizeUploadPath(secret)).toThrow("outside the file root");
+    expect(sanitizeUploadPath("package.json")).toBe(realpathSync.native(join(process.cwd(), "package.json")));
+  });
+
+  it("refuses a hard link inside the root to a file outside it", () => {
+    const link = join(root, "hardlink.json");
+    linkSync(secret, link);
+    expect(() => sanitizeUploadPath(link, root)).toThrow("hard link");
+  });
+
+  it("also refuses a file hard-linked twice inside the root, since nlink cannot see where the other name is", () => {
+    const original = join(root, "twice.txt");
+    writeFileSync(original, "in root");
+    linkSync(original, join(root, "twice-copy.txt"));
+    expect(() => sanitizeUploadPath(original, root)).toThrow("hard link");
+  });
+
+  it("buildArgs passes the checked real path to --upload and refuses an out-of-root path", () => {
+    expect(buildArgs(uploadTool, { uploadPath: inRoot }, root)).toEqual([
+      "drive", "files", "create", "--upload", realpathSync.native(inRoot),
+    ]);
+    expect(() => buildArgs(uploadTool, { uploadPath: secret }, root)).toThrow("outside the file root");
+  });
+
+  // Symlink creation needs a privilege on Windows (WinError 1314 / EPERM), so
+  // these skip there when the link cannot be made.
+  function trySymlink(target: string, path: string, type?: "dir" | "file"): boolean {
+    try { symlinkSync(target, path, type); return true; } catch (err) {
+      // Only Windows without the symlink privilege may skip; anything else is a failure.
+      if (process.platform === "win32" && (err as NodeJS.ErrnoException).code === "EPERM") return false;
+      throw err;
+    }
+  }
+
+  it("refuses a symlink inside the root that points outside it", (ctx) => {
+    const link = join(root, "link-to-secret.json");
+    if (!trySymlink(secret, link, "file")) ctx.skip();
+    expect(() => sanitizeUploadPath(link, root)).toThrow("outside the file root");
+  });
+
+  it("refuses a path through a symlinked directory that points outside", (ctx) => {
+    const link = join(root, "dirlink");
+    if (!trySymlink(outside, link, "dir")) ctx.skip();
+    expect(() => sanitizeUploadPath(join(link, "example-client_secret.json"), root)).toThrow("outside the file root");
+  });
+
+  it("accepts a symlink inside the root that points to another file inside it", (ctx) => {
+    const link = join(root, "link-to-report.txt");
+    if (!trySymlink(inRoot, link, "file")) ctx.skip();
+    expect(sanitizeUploadPath(link, root)).toBe(realpathSync.native(inRoot));
+  });
+
+  it("accepts files under a root given as a symlink to the real directory", (ctx) => {
+    const rootLink = join(base, "root-link");
+    if (!trySymlink(root, rootLink, "dir")) ctx.skip();
+    expect(sanitizeUploadPath(inRoot, rootLink)).toBe(realpathSync.native(inRoot));
   });
 });
 
@@ -453,5 +571,83 @@ describe("executeGws logging", () => {
     } finally {
       delete process.env.GWS_MCP_DEBUG;
     }
+  });
+});
+
+// A path checked by resolveSavePath can be swapped before the write. These call
+// writeSaveFile directly on the swapped-in state.
+describe("writeSaveFile", () => {
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "gws-save-")));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("writes a new file and replaces an existing one", () => {
+    const p = join(dir, "plain.bin");
+    writeSaveFile(p, Buffer.from("first-longer"));
+    writeSaveFile(p, Buffer.from("second"));
+    expect(readFileSync(p, "utf-8")).toBe("second");
+  });
+
+  it("refuses a hard link swapped in after the check and leaves the other file intact", () => {
+    const outside = join(dir, "outside-secret.json");
+    writeFileSync(outside, "example-secret-not-real");
+    const p = join(dir, "swapped-hardlink.bin");
+    linkSync(outside, p);
+    expect(() => writeSaveFile(p, Buffer.from("x"))).toThrow(/no longer a plain file/);
+    expect(readFileSync(outside, "utf-8")).toBe("example-secret-not-real");
+  });
+
+  it("refuses a symlink swapped in after the check and leaves its target intact", (ctx) => {
+    const target = join(dir, "symlink-target.json");
+    writeFileSync(target, "example-secret-not-real");
+    const p = join(dir, "swapped-symlink.bin");
+    try { symlinkSync(target, p, "file"); } catch (err) {
+      if (process.platform === "win32" && (err as NodeJS.ErrnoException).code === "EPERM") ctx.skip();
+      throw err;
+    }
+    expect(() => writeSaveFile(p, Buffer.from("x"))).toThrow();
+    expect(readFileSync(target, "utf-8")).toBe("example-secret-not-real");
+  });
+
+  it("creates nothing through a dangling symlink swapped in after the check", (ctx) => {
+    const target = join(dir, "not-yet-created.json");
+    const p = join(dir, "swapped-dangling.bin");
+    try { symlinkSync(target, p, "file"); } catch (err) {
+      if (process.platform === "win32" && (err as NodeJS.ErrnoException).code === "EPERM") ctx.skip();
+      throw err;
+    }
+    expect(() => writeSaveFile(p, Buffer.from("x"))).toThrow();
+    // Windows has no O_NOFOLLOW, so the exclusive create follows the link and
+    // leaves an empty target; the post-open check still refuses every byte.
+    if (process.platform === "win32") expect(readFileSync(target, "utf-8")).toBe("");
+    else expect(existsSync(target)).toBe(false);
+  });
+
+  // resolveSavePath returned <dir>/swapped-parent/<name>; the directory is then
+  // replaced by a symlink to a directory outside the root.
+  function swapParent(ctx: { skip: () => void }, name: string) {
+    const outsideDir = join(dir, `outside-${name}`);
+    mkdirSync(outsideDir);
+    const parent = join(dir, `swapped-parent-${name}`);
+    mkdirSync(parent);
+    const p = join(parent, name);
+    rmSync(parent, { recursive: true });
+    try { symlinkSync(outsideDir, parent, "dir"); } catch (err) {
+      if (process.platform === "win32" && (err as NodeJS.ErrnoException).code === "EPERM") ctx.skip();
+      throw err;
+    }
+    return { p, outsideFile: join(outsideDir, name) };
+  }
+
+  it("creates nothing when the save directory is swapped for a symlink after the check", (ctx) => {
+    const { p, outsideFile } = swapParent(ctx, "authorized_keys");
+    expect(() => writeSaveFile(p, Buffer.from("example-key-not-real"))).toThrow(/directory changed/);
+    expect(existsSync(outsideFile)).toBe(false);
+  });
+
+  it("leaves an existing outside file intact when the save directory is swapped", (ctx) => {
+    const { p, outsideFile } = swapParent(ctx, "existing.json");
+    writeFileSync(outsideFile, "example-secret-not-real");
+    expect(() => writeSaveFile(p, Buffer.from("x"))).toThrow(/directory changed/);
+    expect(readFileSync(outsideFile, "utf-8")).toBe("example-secret-not-real");
   });
 });

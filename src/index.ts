@@ -25,10 +25,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { execFileSync } from "node:child_process";
-import { readFileSync, unlinkSync, existsSync, copyFileSync } from "node:fs";
+import { readFileSync, unlinkSync, existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { getToolsForServices, ALL_SERVICES, DEFAULT_SERVICES, buildAnnotations, type ToolDef } from "./services.js";
-import { executeGws, gwsNotFoundMessage, spawnGwsRaw } from "./executor.js";
+import { executeGws, gwsNotFoundMessage, isInsideRoot, resolveFileRoot, resolveSavePath, spawnGwsRaw, writeSaveFile } from "./executor.js";
 import { resolveGwsCommand } from "./windows-binary.js";
 import { buildRfc2822, base64url } from "./mime.js";
 import { runAuthCli } from "./auth.js";
@@ -52,15 +52,26 @@ export const SERVER_VERSION: string = JSON.parse(
 
 // ── CLI argument parsing ───────────────────────────────────────────────
 
-function parseArgs(): { services: string[]; gwsBinary: string; readOnly: boolean } {
-  const args = process.argv.slice(2);
+export function parseArgs(
+  args: string[] = process.argv.slice(2),
+): { services: string[]; gwsBinary: string; readOnly: boolean; fileRoot: string } {
   let services = [...DEFAULT_SERVICES];
   let gwsBinary = process.env.GWS_BINARY || "gws";
   let readOnly = false;
+  let fileRoot = ".";
+  let explicitFileRoot = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--read-only") {
       readOnly = true;
+    } else if (args[i] === "--file-root") {
+      const val = args[++i];
+      if (!val) {
+        console.error("[gws-mcp] --file-root needs a directory");
+        process.exit(1);
+      }
+      fileRoot = val;
+      explicitFileRoot = true;
     } else if (args[i] === "--services" || args[i] === "-s") {
       const val = args[++i];
       if (val) {
@@ -85,6 +96,13 @@ OPTIONS:
   --gws-path <path>       Path to gws binary (default: GWS_BINARY or "gws")
   --read-only             Register only the read-only tools. No tool that
                           writes to Google is exposed at all.
+  --file-root <dir>       Directory that local file paths (uploadPath,
+                          savePath) must resolve inside. An uploadPath
+                          symlink is followed; a savePath symlink is
+                          refused (default: the working directory). Current gws
+                          builds also confine --upload to the working
+                          directory, so start the server from this directory
+                          too
   --help, -h              Show this help
 
 COMMANDS:
@@ -101,7 +119,33 @@ EXAMPLE:
     }
   }
 
-  return { services, gwsBinary, readOnly };
+  try {
+    fileRoot = resolveFileRoot(fileRoot);
+  } catch (err) {
+    // A bad --file-root is fatal. An unreadable working directory is not:
+    // tools that never touch a local file still work, and each uploadPath
+    // or savePath call fails on its own when it resolves the root.
+    if (explicitFileRoot) {
+      console.error(`[gws-mcp] Invalid --file-root ${JSON.stringify(fileRoot)}: ${JSON.stringify((err as Error).message)}`);
+      process.exit(1);
+    }
+  }
+  if (explicitFileRoot) warnIfOutsideWorkingDirectory(fileRoot);
+
+  return { services, gwsBinary, readOnly, fileRoot };
+}
+
+// gws itself only accepts --upload paths under its working directory, which is
+// the server's, so uploads from a root outside it are refused by gws.
+function warnIfOutsideWorkingDirectory(root: string): void {
+  let cwd: string;
+  try { cwd = resolveFileRoot(process.cwd()); } catch { return; }
+  if (root !== cwd && !isInsideRoot(root, cwd)) {
+    console.error(
+      `[gws-mcp] --file-root ${JSON.stringify(root)} is outside the working directory ${JSON.stringify(cwd)}; ` +
+        "gws refuses uploads from outside its working directory, so start the server from the file root.",
+    );
+  }
 }
 
 /**
@@ -282,7 +326,7 @@ async function main() {
     return;
   }
 
-  const { services, gwsBinary, readOnly } = parseArgs();
+  const { services, gwsBinary, readOnly, fileRoot } = parseArgs();
 
   const gwsAvailable = validateGwsBinary(gwsBinary);
 
@@ -298,7 +342,7 @@ async function main() {
   );
   console.error(`[gws-mcp] Using gws binary: ${gwsBinary}`);
 
-  const server = createServer(tools, services, gwsBinary, gwsAvailable, readOnly);
+  const server = createServer(tools, services, gwsBinary, gwsAvailable, readOnly, fileRoot);
 
   // Connect via stdio
   const transport = new StdioServerTransport();
@@ -322,6 +366,7 @@ export function createServer(
   gwsBinary: string,
   gwsAvailable: boolean,
   readOnly = false,
+  fileRoot: string = process.cwd(),
 ): McpServer {
   const server = new McpServer({
     name: "gws-mcp-server",
@@ -345,7 +390,7 @@ export function createServer(
         annotations: buildAnnotations(tool),
       },
       async (args) => {
-        const result = await executeGws(tool, args as Record<string, unknown>, gwsBinary);
+        const result = await executeGws(tool, args as Record<string, unknown>, gwsBinary, fileRoot);
 
         if (result.success) {
           return {
@@ -386,7 +431,7 @@ export function createServer(
         inputSchema: {
           fileId: z.string().describe("The file ID to download"),
           exportMimeType: z.string().optional().describe("For Google-native files (Docs/Sheets/Slides): export format. Defaults to text/plain for Docs, text/csv for Sheets. Examples: text/plain, text/csv, application/pdf"),
-          savePath: z.string().optional().describe("For binary files (images, PDFs): save to this local path instead of returning content inline. The file path is returned in the response."),
+          savePath: z.string().optional().describe("For binary files (images, PDFs): save to this local path instead of returning content inline. Must be inside the server's file root (--file-root, default its working directory); a relative path resolves against the root. The file path is returned in the response."),
         },
         // Read-only: fetches content, never mutates Drive. (savePath writes a
         // local file, not the user's Drive data.) openWorldHint because Drive
@@ -399,6 +444,9 @@ export function createServer(
         let keepTmpFile = false;
 
         try {
+          // Check savePath before anything is downloaded.
+          const saveTo = args.savePath ? resolveSavePath(String(args.savePath), fileRoot) : undefined;
+
           // First, get metadata to determine file type
           const metaParams: Record<string, unknown> = {
             fileId: args.fileId,
@@ -471,12 +519,11 @@ export function createServer(
             if (content.length > 100_000) {
               content = content.slice(0, 100_000) + "\n\n[Content truncated at 100,000 characters]";
             }
-          } else if (args.savePath) {
-            // Save binary file to requested path
-            const saveTo = String(args.savePath);
-            copyFileSync(tmpFile, saveTo);
-            const stat = readFileSync(saveTo);
-            content = `[Binary file saved: ${saveTo}]\nName: ${fileName}\nType: ${contentMimeType}\nSize: ${stat.length} bytes`;
+          } else if (saveTo) {
+            // Save binary file to the checked path under the file root
+            const buf = readFileSync(tmpFile);
+            writeSaveFile(saveTo, buf);
+            content = `[Binary file saved: ${saveTo}]\nName: ${fileName}\nType: ${contentMimeType}\nSize: ${buf.length} bytes`;
           } else {
             // Binary file without savePath — keep temp file so caller can access it
             keepTmpFile = true;
