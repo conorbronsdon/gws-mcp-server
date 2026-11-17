@@ -37,15 +37,38 @@ jobs:
         run: |
           LOCAL_VERSION="$(node -p "require('./package.json').version")"
           PKG_NAME="$(node -p "require('./package.json').name")"
-          PUBLISHED_VERSION="$(npm view "$PKG_NAME" version 2>/dev/null || echo none)"
           echo "local=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
-          echo "published=$PUBLISHED_VERSION" >> "$GITHUB_OUTPUT"
-          if [ "$LOCAL_VERSION" = "$PUBLISHED_VERSION" ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "package.json version ($LOCAL_VERSION) is already published — nothing to do."
+          # Ask whether THIS version is on npm, not what the `latest` dist-tag points at.
+          # If latest moves past a release that failed part-way, a latest-based check says
+          # "changed" and npm publish hits E403 on every catch-up. Only a clear not-found
+          # means unpublished; any other npm error stops here instead of guessing.
+          ERR="$(mktemp)"
+          if EXACT="$(npm view "$PKG_NAME@$LOCAL_VERSION" version 2>"$ERR")"; then
+            if [ "$EXACT" = "$LOCAL_VERSION" ]; then
+              FOUND=yes
+            elif [ -z "$EXACT" ]; then
+              # Older npm prints nothing (exit 0) for a missing version of an existing package.
+              FOUND=no
+            else
+              echo "::error::npm view $PKG_NAME@$LOCAL_VERSION returned '$EXACT', expected '$LOCAL_VERSION' or nothing."
+              exit 1
+            fi
+          elif grep -q 'code E404' "$ERR"; then
+            FOUND=no
           else
+            cat "$ERR" >&2
+            echo "::error::Could not check whether $PKG_NAME@$LOCAL_VERSION is on npm (the error was not a 404). Not guessing; re-run once npm answers."
+            exit 1
+          fi
+          # "published" is this exact version when npm has it, else "none".
+          if [ "$FOUND" = yes ]; then
+            echo "published=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "$PKG_NAME@$LOCAL_VERSION is already on npm — nothing to do."
+          else
+            echo "published=none" >> "$GITHUB_OUTPUT"
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "package.json version ($LOCAL_VERSION) differs from published ($PUBLISHED_VERSION) — publishing."
+            echo "$PKG_NAME@$LOCAL_VERSION is not on npm — publishing."
           fi
 
       - name: Install dependencies
