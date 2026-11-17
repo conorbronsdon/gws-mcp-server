@@ -24,8 +24,14 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm test
-      # Keep installs green: block CI on high+ advisories, let moderates through.
-      - run: npm audit --audit-level=high
+      # Block CI on high+ advisories in what ships (prod dependencies), let
+      # moderates through. Dev-only findings (test tooling) are reported in the
+      # next step but don't block: they never reach the package or the image.
+      - name: Audit shipped dependencies (blocking)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Audit all dependencies (report only)
+        run: npm audit --audit-level=high
+        continue-on-error: true
 
   # Stable aggregation gate: branch protection requires only this one check, so
   # editing the test matrix (OS/node) never orphans a required check name again.
