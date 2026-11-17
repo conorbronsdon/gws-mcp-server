@@ -16,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v6
         with:
@@ -120,14 +122,27 @@ jobs:
           ./mcp-publisher login github-oidc
           ./mcp-publisher publish
 
+      # Gated on "the release is missing", never on "npm published in this run": a
+      # catch-up dispatch after an npm-lag failure must still finish the release.
       - name: Create GitHub release
-        if: steps.version.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.local }}
         run: |
-          VERSION="${{ steps.version.outputs.local }}"
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             echo "Release v$VERSION already exists — skipping."
-          else
-            gh release create "v$VERSION" --target "$GITHUB_SHA" --generate-notes
+            exit 0
           fi
+          if [ "$(npm view "$(node -p "require('./package.json').name")@$VERSION" version 2>/dev/null)" != "$VERSION" ]; then
+            echo "::error::$VERSION is not on npm yet; not creating a GitHub release for an unpublished version. Re-run once npm serves it."
+            exit 1
+          fi
+          # Target main's own commit that set this version (first parent, so a merge
+          # commit counts), not whatever HEAD is when a catch-up runs.
+          SETS_VERSION="\"version\"[[:space:]]*:[[:space:]]*\"${VERSION//./\\.}\""
+          TARGET="$(git log -1 --first-parent --diff-merges=first-parent --no-patch --format=%H -G"$SETS_VERSION" -- package.json)"
+          if [ -z "$TARGET" ] || ! git merge-base --is-ancestor "$TARGET" HEAD; then
+            echo "::error::Could not find the commit on main that set version $VERSION in package.json."
+            exit 1
+          fi
+          gh release create "v$VERSION" --target "$TARGET" --generate-notes
