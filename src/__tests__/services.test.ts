@@ -843,10 +843,10 @@ describe("tool annotation classifications", () => {
 
   it("additive writes are readOnlyHint:false with an explicit destructiveHint:false", () => {
     const expectAdditive = [
-      "drive_files_create", "drive_files_copy", "drive_files_update", "drive_permissions_create",
+      "drive_files_create", "drive_files_copy", "drive_permissions_create",
       "drive_comments_create", "drive_replies_create",
-      "sheets_values_update", "sheets_values_append",
-      "calendar_events_insert", "calendar_events_update",
+      "sheets_values_append",
+      "calendar_events_insert",
       "docs_create",
       "slides_create",
       "tasks_tasklists_insert", "tasks_tasklists_update",
@@ -858,6 +858,45 @@ describe("tool annotation classifications", () => {
       expect(a.readOnlyHint, name).toBe(false);
       expect(a.destructiveHint, name).toBe(false);
     }
+  });
+
+  it("overwriting updates are destructive writes, like drive_comments_update (#94)", () => {
+    // Each replaces user data with no copy kept: cell values, file content
+    // (via uploadPath), the whole attendee list (plus cancellation emails).
+    const expectOverwrite = ["sheets_values_update", "drive_files_update", "calendar_events_update"];
+    for (const name of expectOverwrite) {
+      const tool = byName.get(name)!;
+      expect(tool, `${name} should exist`).toBeDefined();
+      const a = buildAnnotations(tool);
+      expect(a.readOnlyHint, name).toBe(false);
+      expect(a.destructiveHint, name).toBe(true);
+      // tools/list descriptions are what agents read, so they must say why.
+      expect(tool.description, name).toMatch(/marked destructive/);
+    }
+  });
+
+  // Values on main before the overwrite tools became destructive (#94): marking
+  // them destructive must not change these, so they are pinned here.
+  it("overwrite tools keep their main idempotency: sheets/drive true, calendar false", () => {
+    expect(buildAnnotations(byName.get("sheets_values_update")!).idempotentHint).toBe(true);
+    expect(buildAnnotations(byName.get("drive_files_update")!).idempotentHint).toBe(true);
+    expect(buildAnnotations(byName.get("calendar_events_update")!).idempotentHint).toBe(false);
+  });
+
+  it("calendar_events_update sendUpdates says it does not decide who is uninvited", () => {
+    const sendUpdates = byName.get("calendar_events_update")!.params.find((p) => p.name === "sendUpdates")!;
+    expect(sendUpdates.description).toMatch(/uninvited/);
+    expect(sendUpdates.description).toMatch(/email/);
+  });
+
+  it("calendar_events_update sends attendees without sendUpdates, so the overwrite does not depend on it", () => {
+    const args = buildArgs(byName.get("calendar_events_update")!, {
+      calendarId: "primary",
+      eventId: "evt123",
+      attendees: '[{"email":"a@x.com"}]',
+    });
+    expect(args[args.indexOf("--params") + 1]).toBe(JSON.stringify({ calendarId: "primary", eventId: "evt123" }));
+    expect(args[args.indexOf("--json") + 1]).toBe(JSON.stringify({ attendees: [{ email: "a@x.com" }] }));
   });
 
   it("gmail_threads_modify is a non-destructive write (TRASH is reversible)", () => {
@@ -896,15 +935,15 @@ describe("tool annotation classifications", () => {
     }
   });
 
-  it("classification counts match the intended split (28 read / 16 destructive / 19 additive)", () => {
+  it("classification counts match the intended split (28 read / 19 destructive / 16 additive)", () => {
     const read = allTools.filter((t) => buildAnnotations(t).readOnlyHint === true).length;
     const destructive = allTools.filter((t) => buildAnnotations(t).destructiveHint === true).length;
     const additive = allTools.filter(
       (t) => buildAnnotations(t).readOnlyHint === false && buildAnnotations(t).destructiveHint === false,
     ).length;
     expect(read).toBe(28);
-    expect(destructive).toBe(16);
-    expect(additive).toBe(19);
+    expect(destructive).toBe(19);
+    expect(additive).toBe(16);
     expect(read + destructive + additive).toBe(allTools.length);
   });
 });
