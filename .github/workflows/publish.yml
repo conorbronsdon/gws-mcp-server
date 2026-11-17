@@ -136,9 +136,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.local }}
         run: |
-          if gh release view "v$VERSION" >/dev/null 2>&1; then
+          # Only "release not found" means missing; any other gh failure stops the run
+          # rather than racing a create against a release that may already exist.
+          if VIEW="$(gh release view "v$VERSION" 2>&1)"; then
             echo "Release v$VERSION already exists — skipping."
             exit 0
+          elif ! printf '%s' "$VIEW" | grep -qi 'release not found'; then
+            echo "::error::Could not check for release v$VERSION: $VIEW"
+            exit 1
           fi
           # npm can take a minute or more to serve a version it just accepted, so wait
           # (bounded) rather than fail the normal path right after a publish.
@@ -150,7 +155,9 @@ jobs:
           done
           # Target main's own commit that set this version (first parent, so a merge
           # commit counts), not whatever HEAD is when a catch-up runs.
-          SETS_VERSION="\"version\"[[:space:]]*:[[:space:]]*\"${VERSION//./\\.}\""
+          # Escape every ERE metacharacter in the version (dots, and "+" in build metadata).
+          VERSION_RE="$(printf '%s' "$VERSION" | sed 's/[][\\.*^$+?(){}|]/\\&/g')"
+          SETS_VERSION="\"version\"[[:space:]]*:[[:space:]]*\"$VERSION_RE\""
           TARGET="$(git log -1 --first-parent --diff-merges=first-parent --no-patch --format=%H -G"$SETS_VERSION" -- package.json)"
           if [ -z "$TARGET" ] || ! git merge-base --is-ancestor "$TARGET" HEAD; then
             echo "::error::Could not find the commit on main that set version $VERSION in package.json."
