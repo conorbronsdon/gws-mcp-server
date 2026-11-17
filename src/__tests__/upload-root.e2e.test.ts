@@ -68,3 +68,19 @@ describe("drive_files_create uploadPath file root", () => {
     expect(res.ran).toBe(false);
   });
 });
+
+describe("drive_files_create uploadPath with an unresolvable file root", () => {
+  it("returns a tool error for the call and does not run gws", async () => {
+    rmSync(marker, { force: true });
+    const server = createServer(getToolsForServices(["drive"]), ["drive"], bin, true, false, join(base, "gone"));
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "upload-root-test", version: "1.0.0" });
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    const result = await client.callTool({ name: "drive_files_create", arguments: { name: "example", uploadPath: "report.txt" } });
+    expect(result.isError).toBe(true);
+    expect((result.content as Array<{ text: string }>)[0].text).toContain("ENOENT");
+    let ran = false;
+    try { ran = readFileSync(marker, "utf-8") === "1"; } catch { /* gws never ran */ }
+    expect(ran).toBe(false);
+  });
+});
