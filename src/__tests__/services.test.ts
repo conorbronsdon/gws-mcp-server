@@ -875,7 +875,9 @@ describe("tool annotation classifications", () => {
     }
   });
 
-  it("the overwrite reclassification leaves idempotency alone", () => {
+  // Values on main before the overwrite tools became destructive (#94): marking
+  // them destructive must not change these, so they are pinned here.
+  it("overwrite tools keep their main idempotency: sheets/drive true, calendar false", () => {
     expect(buildAnnotations(byName.get("sheets_values_update")!).idempotentHint).toBe(true);
     expect(buildAnnotations(byName.get("drive_files_update")!).idempotentHint).toBe(true);
     expect(buildAnnotations(byName.get("calendar_events_update")!).idempotentHint).toBe(false);
