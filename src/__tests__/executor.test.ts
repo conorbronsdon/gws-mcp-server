@@ -88,12 +88,13 @@ describe("spawnGwsRaw", () => {
     const pending = executeGws(
       { name: "drive_files_list", description: "test", command: ["drive", "files", "list"], params: [] },
       {},
-      "gws",
+      // A path that resolves on Windows too, so the spawn mock is reached there.
+      mockGws,
     );
     proc.emit("error", Object.assign(new Error("spawn gws ENOENT"), { code: "ENOENT" }));
     const result = await pending;
     expect(result.success).toBe(false);
-    expect(result.error).toBe(gwsNotFoundMessage("gws"));
+    expect(result.error).toBe(gwsNotFoundMessage(mockGws));
   });
 });
 
