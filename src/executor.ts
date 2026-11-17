@@ -46,8 +46,10 @@ export function isInsideRoot(realPath: string, realRoot: string): boolean {
  * Validate and sanitize a file upload path.
  * Rejects paths containing shell metacharacters or path traversal sequences,
  * and any file whose real path (symlinks resolved) is outside `root`. A
- * relative path is resolved against `root`. Returns the real path, so gws
- * reads the file that was checked.
+ * relative path is resolved against `root`. Returns the real path, so a
+ * symlink swapped in later is not followed to a new target. gws opens the path
+ * itself, so a process that can write inside the root could still swap the file
+ * between this check and the upload.
  */
 export function sanitizeUploadPath(rawPath: string, root: string = process.cwd()): string {
   // Reject disallowed path characters
