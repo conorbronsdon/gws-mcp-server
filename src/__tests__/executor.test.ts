@@ -1,7 +1,7 @@
 import { afterAll, describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { fileURLToPath } from "node:url";
-import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import type { ToolDef } from "../services.js";
@@ -14,7 +14,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { spawn } from "node:child_process";
-import { buildArgs, sanitizeUploadPath, isInsideRoot, executeGws, gwsNotFoundMessage, spawnGwsRaw } from "../executor.js";
+import { buildArgs, sanitizeUploadPath, isInsideRoot, executeGws, gwsNotFoundMessage, spawnGwsRaw, writeSaveFile } from "../executor.js";
 import { GwsBinaryConfigurationError, resolveGwsCommand } from "../windows-binary.js";
 
 const mockGws = fileURLToPath(new URL("./fixtures/argv-dump.cjs", import.meta.url));
@@ -567,5 +567,80 @@ describe("executeGws logging", () => {
     } finally {
       delete process.env.GWS_MCP_DEBUG;
     }
+  });
+});
+
+// A path checked by resolveSavePath can be swapped before the write. These call
+// writeSaveFile directly on the swapped-in state.
+describe("writeSaveFile", () => {
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "gws-save-")));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("writes a new file and replaces an existing one", () => {
+    const p = join(dir, "plain.bin");
+    writeSaveFile(p, Buffer.from("first-longer"));
+    writeSaveFile(p, Buffer.from("second"));
+    expect(readFileSync(p, "utf-8")).toBe("second");
+  });
+
+  it("refuses a hard link swapped in after the check and leaves the other file intact", () => {
+    const outside = join(dir, "outside-secret.json");
+    writeFileSync(outside, "example-secret-not-real");
+    const p = join(dir, "swapped-hardlink.bin");
+    linkSync(outside, p);
+    expect(() => writeSaveFile(p, Buffer.from("x"))).toThrow(/no longer a plain file/);
+    expect(readFileSync(outside, "utf-8")).toBe("example-secret-not-real");
+  });
+
+  it("refuses a symlink swapped in after the check and leaves its target intact", (ctx) => {
+    const target = join(dir, "symlink-target.json");
+    writeFileSync(target, "example-secret-not-real");
+    const p = join(dir, "swapped-symlink.bin");
+    try { symlinkSync(target, p, "file"); } catch (err) {
+      if (process.platform === "win32" && (err as NodeJS.ErrnoException).code === "EPERM") ctx.skip();
+      throw err;
+    }
+    expect(() => writeSaveFile(p, Buffer.from("x"))).toThrow();
+    expect(readFileSync(target, "utf-8")).toBe("example-secret-not-real");
+  });
+
+  it("creates nothing through a dangling symlink swapped in after the check", (ctx) => {
+    const target = join(dir, "not-yet-created.json");
+    const p = join(dir, "swapped-dangling.bin");
+    try { symlinkSync(target, p, "file"); } catch (err) {
+      if (process.platform === "win32" && (err as NodeJS.ErrnoException).code === "EPERM") ctx.skip();
+      throw err;
+    }
+    expect(() => writeSaveFile(p, Buffer.from("x"))).toThrow();
+    expect(existsSync(target)).toBe(false);
+  });
+
+  // resolveSavePath returned <dir>/swapped-parent/<name>; the directory is then
+  // replaced by a symlink to a directory outside the root.
+  function swapParent(ctx: { skip: () => void }, name: string) {
+    const outsideDir = join(dir, `outside-${name}`);
+    mkdirSync(outsideDir);
+    const parent = join(dir, `swapped-parent-${name}`);
+    mkdirSync(parent);
+    const p = join(parent, name);
+    rmSync(parent, { recursive: true });
+    try { symlinkSync(outsideDir, parent, "dir"); } catch (err) {
+      if (process.platform === "win32" && (err as NodeJS.ErrnoException).code === "EPERM") ctx.skip();
+      throw err;
+    }
+    return { p, outsideFile: join(outsideDir, name) };
+  }
+
+  it("creates nothing when the save directory is swapped for a symlink after the check", (ctx) => {
+    const { p, outsideFile } = swapParent(ctx, "authorized_keys");
+    expect(() => writeSaveFile(p, Buffer.from("example-key-not-real"))).toThrow(/directory changed/);
+    expect(existsSync(outsideFile)).toBe(false);
+  });
+
+  it("leaves an existing outside file intact when the save directory is swapped", (ctx) => {
+    const { p, outsideFile } = swapParent(ctx, "existing.json");
+    writeFileSync(outsideFile, "example-secret-not-real");
+    expect(() => writeSaveFile(p, Buffer.from("x"))).toThrow(/directory changed/);
+    expect(readFileSync(outsideFile, "utf-8")).toBe("example-secret-not-real");
   });
 });

@@ -5,8 +5,8 @@
  */
 
 import { spawn } from "node:child_process";
-import { resolve, normalize, relative, isAbsolute, sep } from "node:path";
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { resolve, normalize, relative, isAbsolute, sep, dirname, basename, join } from "node:path";
+import { closeSync, constants, existsSync, fstatSync, ftruncateSync, lstatSync, openSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import type { ToolDef } from "./services.js";
 import { mapGwsErrorToTyped } from "./errors.js";
 import { resolveGwsCommand } from "./windows-binary.js";
@@ -101,6 +101,94 @@ export function sanitizeUploadPath(rawPath: string, root: string = process.cwd()
   }
 
   return real;
+}
+
+/**
+ * Validate a local destination for downloaded bytes (`drive_files_download`
+ * `savePath`). A relative path resolves against `root`. The parent directory
+ * must exist and its real path must be the root or inside it. An existing
+ * target must be a regular file with a single link: a symlink or hard link
+ * could alias a file outside the root. Returns the path to write.
+ */
+export function resolveSavePath(rawPath: string, root: string = process.cwd()): string {
+  const realRoot = resolveFileRoot(root);
+  const target = resolve(realRoot, rawPath);
+  const parent = dirname(target);
+  if (!existsSync(parent)) {
+    throw new Error(`Save directory does not exist: ${parent}`);
+  }
+  let realParent: string;
+  try {
+    realParent = realpathSync.native(parent);
+  } catch {
+    throw new Error(`Save directory does not exist: ${parent}`);
+  }
+  if (realParent !== realRoot && !isInsideRoot(realParent, realRoot)) {
+    throw new Error(
+      `Save path is outside the file root (${realRoot}): ${rawPath}. ` +
+        "Save under the root, or start the server with --file-root <dir>.",
+    );
+  }
+  const final = join(realParent, basename(target));
+  let st;
+  try {
+    st = lstatSync(final);
+  } catch {
+    return final;
+  }
+  if (st.isSymbolicLink()) {
+    throw new Error(`Save path is a symlink, which may point outside the file root: ${rawPath}`);
+  }
+  if (!st.isFile()) {
+    throw new Error(`Save path exists and is not a regular file: ${rawPath}`);
+  }
+  if (st.nlink > 1) {
+    throw new Error(`Save path is a hard link (${st.nlink} links), so it may alias a file outside the file root: ${rawPath}`);
+  }
+  return final;
+}
+
+/**
+ * Write `data` to a path from `resolveSavePath`, which is `<real parent>/<name>`.
+ * A new file is created with O_EXCL, so nothing is created through a symlink
+ * swapped in after the check. An existing file is opened without O_CREAT or
+ * truncation. Before any byte changes, the opened file must still be a plain
+ * file, the parent's real path must be unchanged, and the path must still name
+ * the opened inode, so a symlink, hard link or parent directory swapped in is
+ * refused. O_NOFOLLOW (not on Windows) also stops the open following a symlink.
+ */
+export function writeSaveFile(path: string, data: Buffer): void {
+  const parent = dirname(path);
+  const parentChanged = () =>
+    new Error(`Save directory changed after it was checked: ${parent}`);
+  const realOrNull = (p: string) => {
+    try { return realpathSync.native(p); } catch { return null; }
+  };
+  if (realOrNull(parent) !== parent) throw parentChanged();
+  const nofollow = constants.O_NOFOLLOW ?? 0;
+  let fd: number;
+  try {
+    fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | nofollow);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+    fd = openSync(path, constants.O_WRONLY | nofollow);
+  }
+  try {
+    const st = fstatSync(fd, { bigint: true });
+    if (!st.isFile() || st.nlink > 1n || lstatSync(path).isSymbolicLink()) {
+      throw new Error(`Save path changed after it was checked and is no longer a plain file: ${path}`);
+    }
+    // The open may have gone through a parent swapped in after the check above.
+    let now;
+    try { now = statSync(path, { bigint: true }); } catch { throw parentChanged(); }
+    if (realOrNull(parent) !== parent || now.dev !== st.dev || now.ino !== st.ino) {
+      throw parentChanged();
+    }
+    ftruncateSync(fd, 0);
+    writeFileSync(fd, data); // loops until every byte is written; a bare writeSync may stop short
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export interface ExecResult {
