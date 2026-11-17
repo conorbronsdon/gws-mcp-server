@@ -870,6 +870,8 @@ describe("tool annotation classifications", () => {
       const a = buildAnnotations(tool);
       expect(a.readOnlyHint, name).toBe(false);
       expect(a.destructiveHint, name).toBe(true);
+      // tools/list descriptions are what agents read, so they must say why.
+      expect(tool.description, name).toMatch(/so this tool is marked destructive\.$/);
     }
   });
 

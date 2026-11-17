@@ -180,7 +180,7 @@ const driveTools: ToolDef[] = [
   },
   {
     name: "drive_files_update",
-    description: "Update a file's metadata or content.",
+    description: "Update a file's metadata or content. An uploadPath replaces the file's content and no copy of the old content is kept, so this tool is marked destructive.",
     command: ["drive", "files", "update"],
     params: [
       { name: "fileId", description: "The file ID to update", type: "string", required: true },
@@ -455,7 +455,7 @@ const sheetsTools: ToolDef[] = [
   },
   {
     name: "sheets_values_update",
-    description: "Write values to a spreadsheet range.",
+    description: "Write values to a spreadsheet range. Overwrites the values already in the range; the previous values are not kept, so this tool is marked destructive.",
     command: ["sheets", "spreadsheets", "values", "update"],
     params: [
       { name: "spreadsheetId", description: "The spreadsheet ID", type: "string", required: true },
@@ -546,7 +546,7 @@ const calendarTools: ToolDef[] = [
   },
   {
     name: "calendar_events_update",
-    description: "Update an existing calendar event with patch semantics (only supplied fields change).",
+    description: "Update an existing calendar event with patch semantics (only supplied fields change). attendees replaces the whole list and anyone omitted is uninvited, so this tool is marked destructive.",
     command: ["calendar", "events", "patch"],
     params: [
       { name: "calendarId", description: "Calendar ID", type: "string", required: true },
@@ -563,7 +563,8 @@ const calendarTools: ToolDef[] = [
     // Not marked idempotent since sendUpdates landed: with "all"/"externalOnly",
     // every retry re-emails all attendees — an additional effect per call.
     // destructive: attendees replaces the whole list, uninviting anyone
-    // omitted (with cancellation emails when sendUpdates is set).
+    // omitted regardless of sendUpdates; sendUpdates only decides whether
+    // they are also emailed a cancellation.
     destructive: true,
   },
   {
