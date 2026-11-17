@@ -977,3 +977,45 @@ describe("drive_comments_create anchor", () => {
     }
   });
 });
+
+// buildArgs JSON-decodes a body string that parses to an object, array or
+// null unless the param is literalString. That is how `requests`, `values`
+// and `attendees` reach the API as structures — but on a free-text or scalar
+// field it rewrites what the caller typed: a task note "null" became
+// `notes: null` (under patch semantics that would clear the note; not verified
+// against the live API), and a comment whose text
+// was '{"status":"ok"}' was sent as an object. Every body param that is not
+// documented as taking JSON must go through verbatim.
+describe("free-text body params", () => {
+  const scalars = getToolsForServices(ALL_SERVICES).flatMap((tool) =>
+    (tool.bodyParams ?? [])
+      .filter((p) => p.type === "string" && !/JSON/.test(p.description))
+      .map((p) => ({ tool, p })),
+  );
+
+  it("covers the free-text fields this test is about", () => {
+    const names = scalars.map(({ tool, p }) => `${tool.name}.${p.name}`);
+    expect(names).toEqual(expect.arrayContaining([
+      "tasks_tasks_update.notes",
+      "drive_comments_create.content",
+      "calendar_events_update.description",
+      "docs_create.title",
+    ]));
+  });
+
+  for (const value of ["null", '{"status":"ok"}', '["example"]']) {
+    it(`sends ${value} verbatim on every scalar body param`, () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, "platform", { value: "linux" });
+      try {
+        for (const { tool, p } of scalars) {
+          const args = buildArgs(tool, { [p.name]: value });
+          const body = JSON.parse(args[args.indexOf("--json") + 1]);
+          expect(body[p.name], `${tool.name}.${p.name}`).toBe(value);
+        }
+      } finally {
+        Object.defineProperty(process, "platform", { value: originalPlatform });
+      }
+    });
+  }
+});
