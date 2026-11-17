@@ -104,6 +104,32 @@ export function buildArgs(
 }
 
 /**
+ * Pick the text that describes a failed gws run.
+ *
+ * gws prints a failure as a JSON body on stdout
+ * (`{"error":{"code":404,"message":"...","reason":"notFound"}}`) and a
+ * one-line `error[api]: <message>` summary on stderr, which carries no status
+ * code. Preferring stderr whenever it was non-empty threw the JSON away, so
+ * `mapGwsErrorToTyped()` never saw a status and every API failure fell through
+ * to the untyped fallback. Use stdout when it is that JSON error body;
+ * otherwise keep the old order (stderr, then stdout, then the exit code).
+ */
+export function failureDetail(stdout: string, stderr: string, code: number | null): string {
+  const out = stdout.trim();
+  if (out.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(out) as { error?: unknown };
+      if (parsed && typeof parsed.error === "object" && parsed.error !== null) {
+        return out;
+      }
+    } catch {
+      // Not JSON (or truncated): fall through to the old order.
+    }
+  }
+  return stderr || stdout || `Process exited with code ${code}`;
+}
+
+/**
  * Spawn gws and collect output, enforcing output size limits during
  * accumulation to prevent unbounded memory consumption.
  */
@@ -155,8 +181,7 @@ export function spawnGwsRaw(
       if (code === 0) {
         resolve({ stdout, stderr });
       } else {
-        const errorDetail = stderr || stdout || `Process exited with code ${code}`;
-        reject(new Error(errorDetail));
+        reject(new Error(failureDetail(stdout, stderr, code)));
       }
     });
   });
