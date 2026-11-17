@@ -616,7 +616,10 @@ describe("writeSaveFile", () => {
       throw err;
     }
     expect(() => writeSaveFile(p, Buffer.from("x"))).toThrow();
-    expect(existsSync(target)).toBe(false);
+    // Windows has no O_NOFOLLOW, so the exclusive create follows the link and
+    // leaves an empty target; the post-open check still refuses every byte.
+    if (process.platform === "win32") expect(readFileSync(target, "utf-8")).toBe("");
+    else expect(existsSync(target)).toBe(false);
   });
 
   // resolveSavePath returned <dir>/swapped-parent/<name>; the directory is then
