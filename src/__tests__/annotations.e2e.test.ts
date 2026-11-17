@@ -411,6 +411,10 @@ describe("idempotentHint / openWorldHint", () => {
     const writes = tools.filter((t) => t.annotations?.readOnlyHint === false);
     expect(reads.length).toBe(29);
     expect(writes.length).toBe(38);
+    // Every tool is in exactly one bucket: none may omit readOnlyHint, which the
+    // README's read/write split depends on.
+    expect(tools.filter((t) => typeof t.annotations?.readOnlyHint !== "boolean").map((t) => t.name)).toEqual([]);
+    expect(reads.length + writes.length).toBe(tools.length);
 
     const readsOff = reads
       .filter((t) => JSON.stringify(t.annotations) !== JSON.stringify({ readOnlyHint: true, openWorldHint: true }))
