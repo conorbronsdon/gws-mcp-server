@@ -7,8 +7,8 @@
  * default, and a Doc can be exported to PDF on request.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { chmodSync, copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,10 +36,15 @@ afterAll(() => {
   delete process.env.FAKE_DRIVE_CONTENT;
 });
 
-async function download(meta: Record<string, unknown>, content: Buffer, args: Record<string, unknown>) {
+async function download(
+  meta: Record<string, unknown>,
+  content: Buffer,
+  args: Record<string, unknown>,
+  fileRoot: string | undefined = dir,
+) {
   process.env.FAKE_DRIVE_META = JSON.stringify(meta);
   process.env.FAKE_DRIVE_CONTENT = content.toString("base64");
-  const server = createServer(getToolsForServices(["drive"]), ["drive"], bin, true);
+  const server = createServer(getToolsForServices(["drive"]), ["drive"], bin, true, false, fileRoot);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "download-test", version: "1.0.0" });
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -108,5 +113,126 @@ describe("drive_files_download", () => {
     );
     expect(res.isError, res.text).toBeFalsy();
     expect(res.text).toBe("example document text");
+  });
+});
+
+describe("drive_files_download savePath file root", () => {
+  const PNG = { mimeType: "image/png", name: "example.png" };
+  const ORIGINAL = Buffer.from("example original credential bytes");
+  let root: string;
+  let outside: string;
+  let victim: string;
+
+  beforeAll(() => {
+    const base = realpathSync(mkdtempSync(join(tmpdir(), "gws-save-root-")));
+    root = join(base, "root");
+    outside = join(base, "outside");
+    mkdirSync(join(root, "sub"), { recursive: true });
+    mkdirSync(outside);
+    mkdirSync(join(base, "root-sibling"));
+    victim = join(outside, "example-client_secret.json");
+  });
+
+  beforeEach(() => writeFileSync(victim, ORIGINAL));
+
+  function victimUntouched() {
+    expect(readFileSync(victim).equals(ORIGINAL)).toBe(true);
+  }
+
+  it("saves inside the file root, including into a subdirectory", async () => {
+    const savePath = join(root, "sub", "out.png");
+    const res = await download(PNG, BINARY, { fileId: "example-file-id", savePath }, root);
+    expect(res.isError, res.text).toBeFalsy();
+    expect(readFileSync(savePath).equals(BINARY)).toBe(true);
+  });
+
+  it("resolves a relative savePath against the file root", async () => {
+    const res = await download(PNG, BINARY, { fileId: "example-file-id", savePath: "relative.png" }, root);
+    expect(res.isError, res.text).toBeFalsy();
+    expect(readFileSync(join(root, "relative.png")).equals(BINARY)).toBe(true);
+  });
+
+  it("still overwrites an existing regular file inside the root", async () => {
+    const savePath = join(root, "again.png");
+    writeFileSync(savePath, "old");
+    const res = await download(PNG, BINARY, { fileId: "example-file-id", savePath }, root);
+    expect(res.isError, res.text).toBeFalsy();
+    expect(readFileSync(savePath).equals(BINARY)).toBe(true);
+  });
+
+  it("refuses to overwrite a credential file outside the root", async () => {
+    const res = await download(PNG, BINARY, { fileId: "example-file-id", savePath: victim }, root);
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain("outside the file root");
+    victimUntouched();
+  });
+
+  it("refuses a new file outside the root, a name-prefix sibling, and ../ escapes", async () => {
+    for (const savePath of [
+      join(outside, "new.png"),
+      join(root + "-sibling", "new.png"),
+      join("..", "outside", "new.png"),
+      join(root, "sub", "..", "..", "outside", "new.png"),
+    ]) {
+      const res = await download(PNG, BINARY, { fileId: "example-file-id", savePath }, root);
+      expect(res.isError, savePath).toBe(true);
+      expect(res.text, savePath).toContain("outside the file root");
+    }
+    expect(existsSync(join(outside, "new.png"))).toBe(false);
+    expect(existsSync(join(root + "-sibling", "new.png"))).toBe(false);
+  });
+
+  it("refuses a hard link inside the root to a file outside it", async () => {
+    const link = join(root, "hardlink.json");
+    linkSync(victim, link);
+    const res = await download(PNG, BINARY, { fileId: "example-file-id", savePath: link }, root);
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain("hard link");
+    victimUntouched();
+  });
+
+  it("refuses a savePath whose directory does not exist", async () => {
+    const res = await download(PNG, BINARY, { fileId: "example-file-id", savePath: join(root, "missing", "x.png") }, root);
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain("does not exist");
+  });
+
+  it("defaults the root to the working directory", async () => {
+    const res = await download(PNG, BINARY, { fileId: "example-file-id", savePath: join(root, "default.png") }, undefined);
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain("outside the file root");
+    expect(existsSync(join(root, "default.png"))).toBe(false);
+  });
+
+  // Symlink creation needs a privilege on Windows (EPERM), so these skip there
+  // when the link cannot be made.
+  function trySymlink(target: string, path: string, type: "dir" | "file"): boolean {
+    try { symlinkSync(target, path, type); return true; } catch { return false; }
+  }
+
+  it("refuses a symlink inside the root that points to a file outside it", async (ctx) => {
+    const link = join(root, "link-to-secret.json");
+    if (!trySymlink(victim, link, "file")) ctx.skip();
+    const res = await download(PNG, BINARY, { fileId: "example-file-id", savePath: link }, root);
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain("symlink");
+    victimUntouched();
+  });
+
+  it("refuses a path through a symlinked directory that points outside", async (ctx) => {
+    const link = join(root, "dirlink");
+    if (!trySymlink(outside, link, "dir")) ctx.skip();
+    const res = await download(PNG, BINARY, { fileId: "example-file-id", savePath: join(link, "example-client_secret.json") }, root);
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain("outside the file root");
+    victimUntouched();
+  });
+
+  it("refuses a dangling symlink inside the root", async (ctx) => {
+    const link = join(root, "dangling.png");
+    if (!trySymlink(join(outside, "not-yet.png"), link, "file")) ctx.skip();
+    const res = await download(PNG, BINARY, { fileId: "example-file-id", savePath: link }, root);
+    expect(res.isError).toBe(true);
+    expect(existsSync(join(outside, "not-yet.png"))).toBe(false);
   });
 });

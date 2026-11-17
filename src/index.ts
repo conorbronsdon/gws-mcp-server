@@ -25,10 +25,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { execFileSync } from "node:child_process";
-import { readFileSync, unlinkSync, existsSync, copyFileSync } from "node:fs";
+import { readFileSync, unlinkSync, existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { getToolsForServices, ALL_SERVICES, DEFAULT_SERVICES, buildAnnotations, type ToolDef } from "./services.js";
-import { executeGws, resolveFileRoot, spawnGwsRaw } from "./executor.js";
+import { executeGws, resolveFileRoot, resolveSavePath, spawnGwsRaw, writeSaveFile } from "./executor.js";
 import { resolveGwsCommand } from "./windows-binary.js";
 import { buildRfc2822, base64url } from "./mime.js";
 import { runAuthCli } from "./auth.js";
@@ -93,8 +93,8 @@ OPTIONS:
   --gws-path <path>       Path to gws binary (default: GWS_BINARY or "gws")
   --read-only             Register only the read-only tools. No tool that
                           writes to Google is exposed at all.
-  --file-root <dir>       Directory that local file paths (uploadPath) must
-                          resolve inside, symlinks followed
+  --file-root <dir>       Directory that local file paths (uploadPath,
+                          savePath) must resolve inside, symlinks followed
                           (default: the working directory)
   --help, -h              Show this help
 
@@ -398,7 +398,7 @@ export function createServer(
         inputSchema: {
           fileId: z.string().describe("The file ID to download"),
           exportMimeType: z.string().optional().describe("For Google-native files (Docs/Sheets/Slides): export format. Defaults to text/plain for Docs, text/csv for Sheets. Examples: text/plain, text/csv, application/pdf"),
-          savePath: z.string().optional().describe("For binary files (images, PDFs): save to this local path instead of returning content inline. The file path is returned in the response."),
+          savePath: z.string().optional().describe("For binary files (images, PDFs): save to this local path instead of returning content inline. Must be inside the server's file root (--file-root, default its working directory); a relative path resolves against the root. The file path is returned in the response."),
         },
         // Read-only: fetches content, never mutates Drive. (savePath writes a
         // local file, not the user's Drive data.) openWorldHint because Drive
@@ -411,6 +411,9 @@ export function createServer(
         let keepTmpFile = false;
 
         try {
+          // Check savePath before anything is downloaded.
+          const saveTo = args.savePath ? resolveSavePath(String(args.savePath), fileRoot) : undefined;
+
           // First, get metadata to determine file type
           const metaParams: Record<string, unknown> = {
             fileId: args.fileId,
@@ -483,12 +486,11 @@ export function createServer(
             if (content.length > 100_000) {
               content = content.slice(0, 100_000) + "\n\n[Content truncated at 100,000 characters]";
             }
-          } else if (args.savePath) {
-            // Save binary file to requested path
-            const saveTo = String(args.savePath);
-            copyFileSync(tmpFile, saveTo);
-            const stat = readFileSync(saveTo);
-            content = `[Binary file saved: ${saveTo}]\nName: ${fileName}\nType: ${contentMimeType}\nSize: ${stat.length} bytes`;
+          } else if (saveTo) {
+            // Save binary file to the checked path under the file root
+            const buf = readFileSync(tmpFile);
+            writeSaveFile(saveTo, buf);
+            content = `[Binary file saved: ${saveTo}]\nName: ${fileName}\nType: ${contentMimeType}\nSize: ${buf.length} bytes`;
           } else {
             // Binary file without savePath — keep temp file so caller can access it
             keepTmpFile = true;

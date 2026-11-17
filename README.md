@@ -146,7 +146,7 @@ append `people` to the service list:
 | `--services, -s` | Comma-separated list of services to expose | Core services; `people` is opt-in |
 | `--gws-path` | Path to the `gws` binary | `GWS_BINARY` or `gws` |
 | `--read-only` | Register only the read-only tools | off |
-| `--file-root <dir>` | Directory that `uploadPath` files must resolve inside | working directory |
+| `--file-root <dir>` | Directory that `uploadPath` and `savePath` files must resolve inside | working directory |
 
 On Windows, npm's `gws.cmd` is resolved to its JavaScript entry point and run with Node. `--gws-path` or `GWS_BINARY` may also point directly to a JavaScript entry point or `.exe`.
 
@@ -163,7 +163,9 @@ This constrains the **agent, not the credential**. The token on disk keeps whate
 
 ### `--file-root`
 
-Tools that take `uploadPath` read a local file and send it to Drive. The path must resolve inside the file root after symlinks are followed, so an agent cannot upload `~/.config/gws/client_secret.json`, `~/.config/gcloud` credentials or an `~/.ssh` key from outside it. A relative `uploadPath` resolves against the root. Hard-linked files are refused, since a hard link can alias a file outside the root. The root defaults to the server's working directory (`/app` in the Docker image). Point it at a dedicated directory rather than your home directory:
+Tools that take `uploadPath` read a local file and send it to Drive. The path must resolve inside the file root after symlinks are followed, so an agent cannot upload `~/.config/gws/client_secret.json`, `~/.config/gcloud` credentials or an `~/.ssh` key from outside it. A relative `uploadPath` resolves against the root. Hard-linked files are refused, since a hard link can alias a file outside the root.
+
+`drive_files_download` `savePath` writes downloaded bytes to a local file, so it follows the same root: the save directory must exist and resolve inside the root, which keeps an agent from overwriting gws credentials, shell startup files or `~/.ssh/authorized_keys`. An existing in-root file can still be overwritten, unless it is a symlink or a hard link. The path is checked before anything is downloaded. The root defaults to the server's working directory (`/app` in the Docker image). Point it at a dedicated directory rather than your home directory:
 
 ```bash
 gws-mcp-server --file-root ~/gws-uploads

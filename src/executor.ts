@@ -5,8 +5,8 @@
  */
 
 import { spawn } from "node:child_process";
-import { resolve, normalize, relative, isAbsolute, sep } from "node:path";
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { resolve, normalize, relative, isAbsolute, sep, dirname, basename, join } from "node:path";
+import { closeSync, constants, existsSync, lstatSync, openSync, realpathSync, statSync, writeSync } from "node:fs";
 import type { ToolDef } from "./services.js";
 import { mapGwsErrorToTyped } from "./errors.js";
 import { resolveGwsCommand } from "./windows-binary.js";
@@ -86,6 +86,59 @@ export function sanitizeUploadPath(rawPath: string, root: string = process.cwd()
   }
 
   return real;
+}
+
+/**
+ * Validate a local destination for downloaded bytes (`drive_files_download`
+ * `savePath`). A relative path resolves against `root`. The parent directory
+ * must exist and its real path must be the root or inside it. An existing
+ * target must be a regular file with a single link: a symlink or hard link
+ * could alias a file outside the root. Returns the path to write.
+ */
+export function resolveSavePath(rawPath: string, root: string = process.cwd()): string {
+  const realRoot = resolveFileRoot(root);
+  const target = resolve(realRoot, rawPath);
+  const parent = dirname(target);
+  if (!existsSync(parent)) {
+    throw new Error(`Save directory does not exist: ${parent}`);
+  }
+  const realParent = realpathSync.native(parent);
+  if (realParent !== realRoot && !isInsideRoot(realParent, realRoot)) {
+    throw new Error(
+      `Save path is outside the file root (${realRoot}): ${rawPath}. ` +
+        "Save under the root, or start the server with --file-root <dir>.",
+    );
+  }
+  const final = join(realParent, basename(target));
+  let st;
+  try {
+    st = lstatSync(final);
+  } catch {
+    return final;
+  }
+  if (st.isSymbolicLink()) {
+    throw new Error(`Save path is a symlink, which may point outside the file root: ${rawPath}`);
+  }
+  if (!st.isFile()) {
+    throw new Error(`Save path exists and is not a regular file: ${rawPath}`);
+  }
+  if (st.nlink > 1) {
+    throw new Error(`Save path is a hard link (${st.nlink} links), so it may alias a file outside the file root: ${rawPath}`);
+  }
+  return final;
+}
+
+/**
+ * Write `data` to a path from `resolveSavePath`, refusing to follow a symlink
+ * that appeared after the check (O_NOFOLLOW; not available on Windows).
+ */
+export function writeSaveFile(path: string, data: Buffer): void {
+  const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0));
+  try {
+    writeSync(fd, data);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export interface ExecResult {
