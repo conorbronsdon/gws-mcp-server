@@ -68,6 +68,22 @@ jobs:
         if: steps.version.outputs.changed == 'true'
         run: npm publish --provenance
 
+      # npm can take a minute or more to serve a version it just accepted, and both
+      # mcp-publisher (it checks the npm package version) and the GitHub release need
+      # it. Wait (bounded) here, before either. Ungated on purpose: on a catch-up or
+      # no-op run the version is already on npm and the first check passes at once.
+      - name: Wait for npm to serve this version
+        env:
+          VERSION: ${{ steps.version.outputs.local }}
+        run: |
+          PKG="$(node -p "require('./package.json').name")"
+          for attempt in $(seq 1 10); do
+            [ "$(npm view "$PKG@$VERSION" version 2>/dev/null)" = "$VERSION" ] && break
+            [ "$attempt" = 10 ] && { echo "::error::$PKG@$VERSION is still not on npm after ~5 minutes; not publishing to the MCP registry or creating a GitHub release for an unpublished version. Re-run the workflow once npm serves it."; exit 1; }
+            sleep 30
+          done
+          echo "npm serves $PKG@$VERSION."
+
       # Overwrites server.json in the runner's checkout so the version the
       # registry receives below always comes from package.json. The write is
       # never committed, so the server.json in git can still show a stale
@@ -145,14 +161,8 @@ jobs:
             echo "::error::Could not check for release v$VERSION: $VIEW"
             exit 1
           fi
-          # npm can take a minute or more to serve a version it just accepted, so wait
-          # (bounded) rather than fail the normal path right after a publish.
-          PKG="$(node -p "require('./package.json').name")"
-          for attempt in $(seq 1 10); do
-            [ "$(npm view "$PKG@$VERSION" version 2>/dev/null)" = "$VERSION" ] && break
-            [ "$attempt" = 10 ] && { echo "::error::$PKG@$VERSION is still not on npm after ~5 minutes; not creating a GitHub release for an unpublished version. Re-run the workflow once npm serves it."; exit 1; }
-            sleep 30
-          done
+          # "Wait for npm to serve this version" above has already confirmed npm serves
+          # it, so this never creates a release for an unpublished version.
           # Target main's own commit that set this version (first parent, so a merge
           # commit counts), not whatever HEAD is when a catch-up runs.
           # Escape every ERE metacharacter in the version (dots, and "+" in build metadata).
