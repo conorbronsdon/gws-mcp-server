@@ -57,7 +57,8 @@ function parseArgs(): { services: string[]; gwsBinary: string; readOnly: boolean
   let services = [...DEFAULT_SERVICES];
   let gwsBinary = process.env.GWS_BINARY || "gws";
   let readOnly = false;
-  let fileRoot = process.cwd();
+  let fileRoot = ".";
+  let explicitFileRoot = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--read-only") {
@@ -69,6 +70,7 @@ function parseArgs(): { services: string[]; gwsBinary: string; readOnly: boolean
         process.exit(1);
       }
       fileRoot = val;
+      explicitFileRoot = true;
     } else if (args[i] === "--services" || args[i] === "-s") {
       const val = args[++i];
       if (val) {
@@ -115,8 +117,13 @@ EXAMPLE:
   try {
     fileRoot = resolveFileRoot(fileRoot);
   } catch (err) {
-    console.error(`[gws-mcp] Invalid --file-root ${fileRoot}: ${(err as Error).message}`);
-    process.exit(1);
+    // A bad --file-root is fatal. An unreadable working directory is not:
+    // tools that never touch a local file still work, and each uploadPath
+    // or savePath call fails on its own when it resolves the root.
+    if (explicitFileRoot) {
+      console.error(`[gws-mcp] Invalid --file-root ${JSON.stringify(fileRoot)}: ${JSON.stringify((err as Error).message)}`);
+      process.exit(1);
+    }
   }
 
   return { services, gwsBinary, readOnly, fileRoot };
