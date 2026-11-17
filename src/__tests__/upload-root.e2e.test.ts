@@ -119,6 +119,28 @@ describe("--file-root at startup", () => {
     expect(r.stderr).toContain("not a directory");
   });
 
+  function stderrOf(args: string[]) {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      parseArgs(args);
+      return err.mock.calls.map((c) => c.join(" ")).join("\n");
+    } finally {
+      err.mockRestore();
+    }
+  }
+
+  it("warns when an explicit --file-root is outside the working directory", () => {
+    const out = stderrOf(["--file-root", root]);
+    expect(out).toContain("outside the working directory");
+    expect(out).toContain(JSON.stringify(realpathSync.native(root)));
+  });
+
+  it("control: no warning for a --file-root at or inside the working directory, or the default", () => {
+    expect(stderrOf(["--file-root", process.cwd()])).toBe("");
+    expect(stderrOf(["--file-root", "src"])).toBe("");
+    expect(stderrOf([])).toBe("");
+  });
+
   it("control: resolves a valid --file-root and the default to real paths", () => {
     expect(parseArgs(["--file-root", root]).fileRoot).toBe(realpathSync.native(root));
     expect(parseArgs([]).fileRoot).toBe(realpathSync.native(process.cwd()));

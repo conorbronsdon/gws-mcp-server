@@ -128,7 +128,11 @@ describe("sanitizeUploadPath file root", () => {
   // Symlink creation needs a privilege on Windows (WinError 1314 / EPERM), so
   // these skip there when the link cannot be made.
   function trySymlink(target: string, path: string, type?: "dir" | "file"): boolean {
-    try { symlinkSync(target, path, type); return true; } catch { return false; }
+    try { symlinkSync(target, path, type); return true; } catch (err) {
+      // Only Windows without the symlink privilege may skip; anything else is a failure.
+      if (process.platform === "win32" && (err as NodeJS.ErrnoException).code === "EPERM") return false;
+      throw err;
+    }
   }
 
   it("refuses a symlink inside the root that points outside it", (ctx) => {

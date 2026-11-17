@@ -28,7 +28,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, unlinkSync, existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { getToolsForServices, ALL_SERVICES, DEFAULT_SERVICES, buildAnnotations, type ToolDef } from "./services.js";
-import { executeGws, gwsNotFoundMessage, resolveFileRoot, resolveSavePath, spawnGwsRaw, writeSaveFile } from "./executor.js";
+import { executeGws, gwsNotFoundMessage, isInsideRoot, resolveFileRoot, resolveSavePath, spawnGwsRaw, writeSaveFile } from "./executor.js";
 import { resolveGwsCommand } from "./windows-binary.js";
 import { buildRfc2822, base64url } from "./mime.js";
 import { runAuthCli } from "./auth.js";
@@ -102,6 +102,7 @@ OPTIONS:
                           refused (default: the working directory). Current gws
                           builds also confine --upload to the working
                           directory, so start the server from this directory
+                          too
   --help, -h              Show this help
 
 COMMANDS:
@@ -129,8 +130,22 @@ EXAMPLE:
       process.exit(1);
     }
   }
+  if (explicitFileRoot) warnIfOutsideWorkingDirectory(fileRoot);
 
   return { services, gwsBinary, readOnly, fileRoot };
+}
+
+// gws itself only accepts --upload paths under its working directory, which is
+// the server's, so uploads from a root outside it are refused by gws.
+function warnIfOutsideWorkingDirectory(root: string): void {
+  let cwd: string;
+  try { cwd = resolveFileRoot(process.cwd()); } catch { return; }
+  if (root !== cwd && !isInsideRoot(root, cwd)) {
+    console.error(
+      `[gws-mcp] --file-root ${JSON.stringify(root)} is outside the working directory ${JSON.stringify(cwd)}; ` +
+        "gws refuses uploads from outside its working directory, so start the server from the file root.",
+    );
+  }
 }
 
 /**
