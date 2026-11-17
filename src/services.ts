@@ -107,8 +107,12 @@ export interface ParamDef {
   enum?: string[];
   /** Body params only: send the value as the literal string it is. Without
    *  this, buildArgs JSON-parses any string that decodes to an object or array
-   *  (how `requests`/`attendees` reach the API as arrays). Set it for fields
-   *  the API itself types as a string holding JSON, e.g. a comment `anchor`. */
+   *  (how `requests`/`attendees` reach the API as arrays). Set it on every
+   *  free-text or scalar field (titles, notes, descriptions, IDs) so text that
+   *  happens to parse as JSON — "null", '{"a":1}' — is sent as typed, and on
+   *  fields the API itself types as a string holding JSON, e.g. a comment
+   *  `anchor`. services.test.ts enforces it for any body param whose
+   *  description doesn't mention JSON. */
   literalString?: boolean;
 }
 
@@ -151,8 +155,8 @@ const driveTools: ToolDef[] = [
       { name: "fields", description: "Fields to return (e.g. \"id,webViewLink\")", type: "string", required: false },
     ],
     bodyParams: [
-      { name: "name", description: "File name", type: "string", required: true },
-      { name: "mimeType", description: "MIME type (e.g. \"application/vnd.google-apps.document\")", type: "string", required: false },
+      { name: "name", description: "File name", type: "string", required: true, literalString: true },
+      { name: "mimeType", description: "MIME type (e.g. \"application/vnd.google-apps.document\")", type: "string", required: false, literalString: true },
       { name: "parents", description: "Parent folder IDs (JSON array as string, e.g. '[\"folderId\"]')", type: "string", required: false },
     ],
     supportsUpload: true,
@@ -168,8 +172,8 @@ const driveTools: ToolDef[] = [
       { name: "fields", description: "Fields to return", type: "string", required: false },
     ],
     bodyParams: [
-      { name: "name", description: "Name for the copy", type: "string", required: true },
-      { name: "mimeType", description: "Target MIME type for conversion", type: "string", required: false },
+      { name: "name", description: "Name for the copy", type: "string", required: true, literalString: true },
+      { name: "mimeType", description: "Target MIME type for conversion", type: "string", required: false, literalString: true },
       { name: "parents", description: "Parent folder IDs (JSON array as string)", type: "string", required: false },
     ],
     defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
@@ -183,8 +187,8 @@ const driveTools: ToolDef[] = [
       { name: "fields", description: "Fields to return", type: "string", required: false },
     ],
     bodyParams: [
-      { name: "name", description: "New file name", type: "string", required: false },
-      { name: "mimeType", description: "New MIME type", type: "string", required: false },
+      { name: "name", description: "New file name", type: "string", required: false, literalString: true },
+      { name: "mimeType", description: "New MIME type", type: "string", required: false, literalString: true },
     ],
     supportsUpload: true,
     defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
@@ -219,9 +223,9 @@ const driveTools: ToolDef[] = [
       { name: "fileId", description: "The file ID to share", type: "string", required: true },
     ],
     bodyParams: [
-      { name: "role", description: "Permission role: owner, organizer, fileOrganizer, writer, commenter, reader", type: "string", required: true },
-      { name: "type", description: "Grantee type: user, group, domain, anyone", type: "string", required: true },
-      { name: "emailAddress", description: "Email of user/group (required for user/group type)", type: "string", required: false },
+      { name: "role", description: "Permission role: owner, organizer, fileOrganizer, writer, commenter, reader", type: "string", required: true, literalString: true },
+      { name: "type", description: "Grantee type: user, group, domain, anyone", type: "string", required: true, literalString: true },
+      { name: "emailAddress", description: "Email of user/group (required for user/group type)", type: "string", required: false, literalString: true },
     ],
   },
   {
@@ -247,7 +251,7 @@ const driveTools: ToolDef[] = [
       { name: "fields", description: "Fields to return (e.g. \"id,role,type,emailAddress\")", type: "string", required: false },
     ],
     bodyParams: [
-      { name: "role", description: "New non-owner role", type: "string", required: true, enum: ["organizer", "fileOrganizer", "writer", "commenter", "reader"] },
+      { name: "role", description: "New non-owner role", type: "string", required: true, enum: ["organizer", "fileOrganizer", "writer", "commenter", "reader"], literalString: true },
     ],
     defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
     // Downgrading a role removes capabilities, so updates are not only additive.
@@ -312,7 +316,7 @@ const driveTools: ToolDef[] = [
       { name: "fields", description: "Fields to include in the response (required by the API for this resource, e.g. \"id,content,createdTime\")", type: "string", required: true },
     ],
     bodyParams: [
-      { name: "content", description: "Comment text", type: "string", required: true },
+      { name: "content", description: "Comment text", type: "string", required: true, literalString: true },
       { name: "anchor", description: "App-defined region JSON string, optional (e.g. '{\"line\":10}')", type: "string", required: false, literalString: true },
     ],
   },
@@ -326,7 +330,7 @@ const driveTools: ToolDef[] = [
       { name: "fields", description: "Fields to include in the response (required by the API for this resource, e.g. \"id,content,modifiedTime\")", type: "string", required: true },
     ],
     bodyParams: [
-      { name: "content", description: "New comment text", type: "string", required: true },
+      { name: "content", description: "New comment text", type: "string", required: true, literalString: true },
     ],
     // Matches drive_permissions_update/drive_files_update: repeating the
     // same content leaves the comment in the same end state.
@@ -381,8 +385,8 @@ const driveTools: ToolDef[] = [
       { name: "fields", description: "Fields to include (e.g. \"id,content,action\")", type: "string", required: false },
     ],
     bodyParams: [
-      { name: "content", description: "Reply text. Required if action is not set", type: "string", required: false },
-      { name: "action", description: "Set to change the parent comment's resolved state instead of (or alongside) replying with text", type: "string", required: false, enum: ["resolve", "reopen"] },
+      { name: "content", description: "Reply text. Required if action is not set", type: "string", required: false, literalString: true },
+      { name: "action", description: "Set to change the parent comment's resolved state instead of (or alongside) replying with text", type: "string", required: false, enum: ["resolve", "reopen"], literalString: true },
     ],
     // Additive: resolving/reopening is a reversible state toggle the API
     // itself doesn't enforce anything on (no replies are blocked, nothing is
@@ -401,7 +405,7 @@ const driveTools: ToolDef[] = [
       { name: "fields", description: "Fields to include (e.g. \"id,content,modifiedTime\")", type: "string", required: false },
     ],
     bodyParams: [
-      { name: "content", description: "New reply text", type: "string", required: true },
+      { name: "content", description: "New reply text", type: "string", required: true, literalString: true },
     ],
     // Matches drive_permissions_update/drive_files_update: repeating the
     // same content leaves the reply in the same end state.
@@ -528,11 +532,11 @@ const calendarTools: ToolDef[] = [
       { name: "sendUpdates", description: "Sends invitation email to attendees when set: \"all\", \"externalOnly\", or \"none\" (default: none — no email, though the event may still appear on an attendee's calendar depending on their settings)", type: "string", required: false, enum: ["all", "externalOnly", "none"] },
     ],
     bodyParams: [
-      { name: "summary", description: "Event title", type: "string", required: true },
+      { name: "summary", description: "Event title", type: "string", required: true, literalString: true },
       { name: "start", description: "Start time JSON (e.g. '{\"dateTime\":\"2026-03-10T10:00:00-07:00\"}')", type: "string", required: true },
       { name: "end", description: "End time JSON", type: "string", required: true },
-      { name: "description", description: "Event description", type: "string", required: false },
-      { name: "location", description: "Event location", type: "string", required: false },
+      { name: "description", description: "Event description", type: "string", required: false, literalString: true },
+      { name: "location", description: "Event location", type: "string", required: false, literalString: true },
       { name: "attendees", description: "Attendees (JSON array as string, e.g. '[{\"email\":\"a@x.com\"},{\"email\":\"b@x.com\",\"optional\":true}]')", type: "string", required: false },
     ],
   },
@@ -546,10 +550,10 @@ const calendarTools: ToolDef[] = [
       { name: "sendUpdates", description: "Sends update email to attendees when set: \"all\", \"externalOnly\", or \"none\" (default: none — no email). With \"all\" or \"externalOnly\", attendees removed by this update receive a cancellation email", type: "string", required: false, enum: ["all", "externalOnly", "none"] },
     ],
     bodyParams: [
-      { name: "summary", description: "Event title", type: "string", required: false },
+      { name: "summary", description: "Event title", type: "string", required: false, literalString: true },
       { name: "start", description: "Start time JSON", type: "string", required: false },
       { name: "end", description: "End time JSON", type: "string", required: false },
-      { name: "description", description: "Event description", type: "string", required: false },
+      { name: "description", description: "Event description", type: "string", required: false, literalString: true },
       { name: "attendees", description: "REPLACES the full attendee list — Google's patch overwrites array fields, so include everyone who should remain; anyone omitted is uninvited. JSON array as string, e.g. '[{\"email\":\"a@x.com\"},{\"email\":\"b@x.com\",\"optional\":true}]'", type: "string", required: false },
     ],
     // Not marked idempotent since sendUpdates landed: with "all"/"externalOnly",
@@ -572,9 +576,9 @@ const calendarTools: ToolDef[] = [
     command: ["calendar", "freebusy", "query"],
     params: [],
     bodyParams: [
-      { name: "timeMin", description: "Start of the interval, RFC3339 timestamp (e.g. \"2026-03-10T00:00:00Z\")", type: "string", required: true },
-      { name: "timeMax", description: "End of the interval, RFC3339 timestamp", type: "string", required: true },
-      { name: "timeZone", description: "IANA time zone for the response (e.g. \"America/Los_Angeles\")", type: "string", required: false },
+      { name: "timeMin", description: "Start of the interval, RFC3339 timestamp (e.g. \"2026-03-10T00:00:00Z\")", type: "string", required: true, literalString: true },
+      { name: "timeMax", description: "End of the interval, RFC3339 timestamp", type: "string", required: true, literalString: true },
+      { name: "timeZone", description: "IANA time zone for the response (e.g. \"America/Los_Angeles\")", type: "string", required: false, literalString: true },
       { name: "items", description: "Calendars/groups to query, as JSON array string, e.g. '[{\"id\":\"primary\"}]'", type: "string", required: true },
     ],
     readOnly: true,
@@ -599,7 +603,7 @@ const docsTools: ToolDef[] = [
     command: ["docs", "documents", "create"],
     params: [],
     bodyParams: [
-      { name: "title", description: "Document title", type: "string", required: true },
+      { name: "title", description: "Document title", type: "string", required: true, literalString: true },
     ],
   },
   {
@@ -636,7 +640,7 @@ const slidesTools: ToolDef[] = [
     command: ["slides", "presentations", "create"],
     params: [],
     bodyParams: [
-      { name: "title", description: "Presentation title", type: "string", required: true },
+      { name: "title", description: "Presentation title", type: "string", required: true, literalString: true },
     ],
     // Additive write: each call creates a new presentation.
   },
@@ -776,7 +780,7 @@ const tasksTools: ToolDef[] = [
     command: ["tasks", "tasklists", "insert"],
     params: [],
     bodyParams: [
-      { name: "title", description: "Task list title", type: "string", required: true },
+      { name: "title", description: "Task list title", type: "string", required: true, literalString: true },
     ],
   },
   {
@@ -787,7 +791,7 @@ const tasksTools: ToolDef[] = [
       { name: "tasklist", description: "Task list ID to update", type: "string", required: true },
     ],
     bodyParams: [
-      { name: "title", description: "New task list title", type: "string", required: false },
+      { name: "title", description: "New task list title", type: "string", required: false, literalString: true },
     ],
     idempotent: true,
   },
@@ -841,10 +845,10 @@ const tasksTools: ToolDef[] = [
       { name: "previous", description: "Sibling task ID (insert immediately after this task)", type: "string", required: false },
     ],
     bodyParams: [
-      { name: "title", description: "Task title", type: "string", required: true },
-      { name: "notes", description: "Free-text notes / body", type: "string", required: false },
-      { name: "status", description: "Task status: needsAction or completed", type: "string", required: false },
-      { name: "due", description: "Due date (RFC 3339, e.g. \"2026-06-01T00:00:00.000Z\")", type: "string", required: false },
+      { name: "title", description: "Task title", type: "string", required: true, literalString: true },
+      { name: "notes", description: "Free-text notes / body", type: "string", required: false, literalString: true },
+      { name: "status", description: "Task status: needsAction or completed", type: "string", required: false, literalString: true },
+      { name: "due", description: "Due date (RFC 3339, e.g. \"2026-06-01T00:00:00.000Z\")", type: "string", required: false, literalString: true },
     ],
   },
   {
@@ -856,10 +860,10 @@ const tasksTools: ToolDef[] = [
       { name: "task", description: "Task ID to update", type: "string", required: true },
     ],
     bodyParams: [
-      { name: "title", description: "Task title", type: "string", required: false },
-      { name: "notes", description: "Free-text notes / body", type: "string", required: false },
-      { name: "status", description: "Task status: needsAction or completed", type: "string", required: false },
-      { name: "due", description: "Due date (RFC 3339)", type: "string", required: false },
+      { name: "title", description: "Task title", type: "string", required: false, literalString: true },
+      { name: "notes", description: "Free-text notes / body", type: "string", required: false, literalString: true },
+      { name: "status", description: "Task status: needsAction or completed", type: "string", required: false, literalString: true },
+      { name: "due", description: "Due date (RFC 3339)", type: "string", required: false, literalString: true },
     ],
     idempotent: true,
   },
@@ -970,7 +974,7 @@ const peopleTools: ToolDef[] = [
       { name: "updatePersonFields", description: "Comma-separated field mask of which fields to update (required by the API)", type: "string", required: true },
     ],
     bodyParams: [
-      { name: "etag", description: "The contact's current etag, from people_people_get or people_people_createContact's response — required for conflict detection", type: "string", required: true },
+      { name: "etag", description: "The contact's current etag, from people_people_get or people_people_createContact's response — required for conflict detection", type: "string", required: true, literalString: true },
       { name: "names", description: "Array of Name objects as JSON string — singleton for contact sources, at most one entry", type: "string", required: false },
       { name: "emailAddresses", description: "Array of EmailAddress objects as JSON string", type: "string", required: false },
       { name: "phoneNumbers", description: "Array of PhoneNumber objects as JSON string", type: "string", required: false },
