@@ -163,7 +163,7 @@ This constrains the **agent, not the credential**. The token on disk keeps whate
 
 ### `--file-root`
 
-Tools that take `uploadPath` read a local file and send it to Drive. The path must resolve inside the file root after symlinks are followed, so an agent cannot upload `~/.config/gws/client_secret.json`, `~/.config/gcloud` credentials or an `~/.ssh` key from outside it. A relative `uploadPath` resolves against the root. Hard-linked files are refused, since a hard link can alias a file outside the root. The root defaults to the server's working directory (`/app` in the Docker image). Point it at a dedicated directory rather than your home directory:
+Tools that take `uploadPath` read a local file and send it to Drive. The path must resolve inside the file root after symlinks are followed, so an agent cannot upload `~/.config/gws/client_secret.json`, `~/.config/gcloud` credentials or an `~/.ssh` key from outside it. A relative `uploadPath` resolves against the root. Hard-linked files are refused, even when every link is inside the root, since the link count cannot show where the other names are and a hard link can alias a file outside the root. The root defaults to the server's working directory (`/app` in the Docker image). Point it at a dedicated directory rather than your home directory:
 
 ```bash
 gws-mcp-server --file-root ~/gws-uploads

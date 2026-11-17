@@ -78,7 +78,9 @@ describe("drive_files_create uploadPath with an unresolvable file root", () => {
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     const result = await client.callTool({ name: "drive_files_create", arguments: { name: "example", uploadPath: "report.txt" } });
     expect(result.isError).toBe(true);
-    expect((result.content as Array<{ text: string }>)[0].text).toContain("ENOENT");
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("File root is not accessible");
+    expect(text).not.toContain("ENOENT");
     let ran = false;
     try { ran = readFileSync(marker, "utf-8") === "1"; } catch { /* gws never ran */ }
     expect(ran).toBe(false);
