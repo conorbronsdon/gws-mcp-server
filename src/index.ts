@@ -28,7 +28,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, unlinkSync, existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { getToolsForServices, ALL_SERVICES, DEFAULT_SERVICES, buildAnnotations, type ToolDef } from "./services.js";
-import { executeGws, resolveFileRoot, resolveSavePath, spawnGwsRaw, writeSaveFile } from "./executor.js";
+import { executeGws, gwsNotFoundMessage, resolveFileRoot, resolveSavePath, spawnGwsRaw, writeSaveFile } from "./executor.js";
 import { resolveGwsCommand } from "./windows-binary.js";
 import { buildRfc2822, base64url } from "./mime.js";
 import { runAuthCli } from "./auth.js";
@@ -144,7 +144,14 @@ function validateGwsBinary(gwsBinary: string): boolean {
     if (process.platform === "win32") {
       resolveGwsCommand(gwsBinary);
     } else {
-      execFileSync("which", [gwsBinary], { stdio: "ignore" });
+      try {
+        execFileSync("which", [gwsBinary], { stdio: "ignore" });
+      } catch (error) {
+        // `which` exits non-zero when the binary is not on PATH. If `which` itself
+        // is missing (ENOENT), keep that error rather than blaming gws.
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") throw error;
+        throw new Error(gwsNotFoundMessage(gwsBinary));
+      }
     }
     return true;
   } catch (error) {

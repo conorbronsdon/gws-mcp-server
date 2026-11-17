@@ -21,7 +21,7 @@ Google Workspace for AI agents: Gmail, Calendar, Drive, Sheets, Docs, Slides, Ta
 
 ## Why?
 
-The `gws` CLI had a built-in MCP server that was [removed in v0.8.0](https://github.com/googleworkspace/cli/pull/275) because it exposed 200-400 tools — causing context window bloat in MCP clients. This server takes a curated approach: you choose which Google services to expose, and only a focused set of high-value, narrowly scoped operations are registered as tools. Every tool declares all four MCP annotation hints — `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` — so clients can reason about side effects, know which writes are safe to retry, and surface clearer consent prompts. This is the permissions leg of trust infrastructure for agents: a deliberately narrow tool surface, side effects declared on every tool, and no freestanding send tool — the only outbound email an agent can trigger is calendar invite/update notifications, opt-in via `sendUpdates` and off by default.
+The `gws` CLI had a built-in MCP server that was [removed in v0.8.0](https://github.com/googleworkspace/cli/pull/275) because it exposed 200-400 tools — causing context window bloat in MCP clients. This server takes a curated approach: you choose which Google services to expose, and only a focused set of high-value, narrowly scoped operations are registered as tools. Every write tool declares all four MCP annotation hints — `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` — and every read tool declares `readOnlyHint` and `openWorldHint` (the MCP spec ignores `destructiveHint` and `idempotentHint` when `readOnlyHint` is true), so clients can reason about side effects, know which writes are safe to retry, and surface clearer consent prompts. This is the permissions leg of trust infrastructure for agents: a deliberately narrow tool surface, side effects declared on every tool, and no freestanding send tool — the only outbound email an agent can trigger is calendar invite/update notifications, opt-in via `sendUpdates` and off by default.
 
 ## Prerequisites
 
@@ -340,7 +340,7 @@ This server is deliberately narrow: a curated tool surface, side effects declare
 | Google's own servers, hosted by Google | [Google Workspace remote MCP servers](https://developers.google.com/workspace/guides/configure-mcp-servers) — 8 endpoints, 42 tools. Developer Preview: requires an application, a Workspace account (not personal Gmail), and a supported client plan |
 | No MCP at all — CLI plus agent skills | [googleworkspace/cli](https://github.com/googleworkspace/cli) — 100+ Agent Skills on the same `gws auth login` this server uses |
 
-Worth saying plainly: Google's official Gmail MCP server is also draft-only, with no send tool — the curated-surface argument is no longer contrarian. What this server still does that those don't: Google Tasks (Google's official lineup has no Tasks server), all four MCP annotation hints on every tool, a local stdio server with no preview application or plan gating, and `--read-only` as a single flag.
+Worth saying plainly: Google's official Gmail MCP server is also draft-only, with no send tool — the curated-surface argument is no longer contrarian. What this server still does that those don't: Google Tasks (Google's official lineup has no Tasks server), all four MCP annotation hints on every write tool (reads declare `readOnlyHint` and `openWorldHint`), a local stdio server with no preview application or plan gating, and `--read-only` as a single flag.
 
 ### The analytics siblings
 
