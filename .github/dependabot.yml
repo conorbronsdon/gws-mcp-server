@@ -29,3 +29,12 @@ updates:
         update-types:
           - minor
           - patch
+
+  # GitHub Actions are pinned to full commit SHAs (tag in a trailing comment).
+  # Security updates for those pins arrive like the npm ones; version updates
+  # stay off (limit 0) while the repo is in maintenance mode.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0

@@ -21,11 +21,11 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           # Node 24 ships npm >=11.5.1 with sigstore intact; self-upgrading npm on the
           # Node 22 runner broke provenance publish ("Cannot find module sigstore").
@@ -37,15 +37,38 @@ jobs:
         run: |
           LOCAL_VERSION="$(node -p "require('./package.json').version")"
           PKG_NAME="$(node -p "require('./package.json').name")"
-          PUBLISHED_VERSION="$(npm view "$PKG_NAME" version 2>/dev/null || echo none)"
           echo "local=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
-          echo "published=$PUBLISHED_VERSION" >> "$GITHUB_OUTPUT"
-          if [ "$LOCAL_VERSION" = "$PUBLISHED_VERSION" ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "package.json version ($LOCAL_VERSION) is already published — nothing to do."
+          # Ask whether THIS version is on npm, not what the `latest` dist-tag points at.
+          # If latest moves past a release that failed part-way, a latest-based check says
+          # "changed" and npm publish hits E403 on every catch-up. Only a clear not-found
+          # means unpublished; any other npm error stops here instead of guessing.
+          ERR="$(mktemp)"
+          if EXACT="$(npm view "$PKG_NAME@$LOCAL_VERSION" version 2>"$ERR")"; then
+            if [ "$EXACT" = "$LOCAL_VERSION" ]; then
+              FOUND=yes
+            elif [ -z "$EXACT" ]; then
+              # Older npm prints nothing (exit 0) for a missing version of an existing package.
+              FOUND=no
+            else
+              echo "::error::npm view $PKG_NAME@$LOCAL_VERSION returned '$EXACT', expected '$LOCAL_VERSION' or nothing."
+              exit 1
+            fi
+          elif grep -q 'code E404' "$ERR"; then
+            FOUND=no
           else
+            cat "$ERR" >&2
+            echo "::error::Could not check whether $PKG_NAME@$LOCAL_VERSION is on npm (the error was not a 404). Not guessing; re-run once npm answers."
+            exit 1
+          fi
+          # "published" is this exact version when npm has it, else "none".
+          if [ "$FOUND" = yes ]; then
+            echo "published=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "$PKG_NAME@$LOCAL_VERSION is already on npm — nothing to do."
+          else
+            echo "published=none" >> "$GITHUB_OUTPUT"
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "package.json version ($LOCAL_VERSION) differs from published ($PUBLISHED_VERSION) — publishing."
+            echo "$PKG_NAME@$LOCAL_VERSION is not on npm — publishing."
           fi
 
       - name: Install dependencies
@@ -70,16 +93,18 @@ jobs:
 
       # npm can take a minute or more to serve a version it just accepted, and both
       # mcp-publisher (it checks the npm package version) and the GitHub release need
-      # it. Wait (bounded) here, before either. Ungated on purpose: on a catch-up or
-      # no-op run the version is already on npm and the first check passes at once.
+      # it. Wait (bounded) here, before either. Only when the version step found the
+      # version unpublished: when changed is false that step already saw npm serve it,
+      # and polling then could turn an npm outage into a failed no-op run.
       - name: Wait for npm to serve this version
+        if: steps.version.outputs.changed == 'true'
         env:
           VERSION: ${{ steps.version.outputs.local }}
         run: |
           PKG="$(node -p "require('./package.json').name")"
           for attempt in $(seq 1 10); do
             [ "$(npm view "$PKG@$VERSION" version 2>/dev/null)" = "$VERSION" ] && break
-            [ "$attempt" = 10 ] && { echo "::error::$PKG@$VERSION is still not on npm after ~5 minutes; not publishing to the MCP registry or creating a GitHub release for an unpublished version. Re-run the workflow once npm serves it."; exit 1; }
+            [ "$attempt" = 10 ] && { echo "::error::$PKG@$VERSION is still not on npm after ~5 minutes; not publishing to the MCP registry or creating a GitHub release for an unpublished version. Once npm serves it, start Publish manually (workflow_dispatch): a plain re-run of this push skips the registry leg."; exit 1; }
             sleep 30
           done
           echo "npm serves $PKG@$VERSION."
@@ -161,8 +186,9 @@ jobs:
             echo "::error::Could not check for release v$VERSION: $VIEW"
             exit 1
           fi
-          # "Wait for npm to serve this version" above has already confirmed npm serves
-          # it, so this never creates a release for an unpublished version.
+          # npm serves this version by now: "Wait for npm to serve this version" confirmed
+          # it when changed is true, and the version step's own npm check did when
+          # changed is false. So this never creates a release for an unpublished version.
           # Target main's own commit that set this version (first parent, so a merge
           # commit counts), not whatever HEAD is when a catch-up runs.
           # Escape every ERE metacharacter in the version (dots, and "+" in build metadata).
