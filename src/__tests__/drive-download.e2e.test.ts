@@ -195,6 +195,7 @@ describe("drive_files_download savePath file root", () => {
     const res = await download(PNG, BINARY, { fileId: "example-file-id", savePath: join(root, "missing", "x.png") }, root);
     expect(res.isError).toBe(true);
     expect(res.text).toContain("does not exist");
+    expect(existsSync(join(root, "missing"))).toBe(false);
   });
 
   it("defaults the root to the working directory", async () => {
@@ -207,7 +208,14 @@ describe("drive_files_download savePath file root", () => {
   // Symlink creation needs a privilege on Windows (EPERM), so these skip there
   // when the link cannot be made.
   function trySymlink(target: string, path: string, type: "dir" | "file"): boolean {
-    try { symlinkSync(target, path, type); return true; } catch { return false; }
+    try {
+      symlinkSync(target, path, type);
+      return true;
+    } catch (err) {
+      // Only Windows without the symlink privilege may skip; anything else is a failure.
+      if (process.platform === "win32" && (err as NodeJS.ErrnoException).code === "EPERM") return false;
+      throw err;
+    }
   }
 
   it("refuses a symlink inside the root that points to a file outside it", async (ctx) => {

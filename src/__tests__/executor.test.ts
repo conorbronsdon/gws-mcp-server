@@ -1,7 +1,7 @@
 import { afterAll, describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { fileURLToPath } from "node:url";
-import { linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import type { ToolDef } from "../services.js";
@@ -572,8 +572,22 @@ describe("writeSaveFile", () => {
     const target = join(dir, "symlink-target.json");
     writeFileSync(target, "example-secret-not-real");
     const p = join(dir, "swapped-symlink.bin");
-    try { symlinkSync(target, p, "file"); } catch { ctx.skip(); }
+    try { symlinkSync(target, p, "file"); } catch (err) {
+      if (process.platform === "win32" && (err as NodeJS.ErrnoException).code === "EPERM") ctx.skip();
+      throw err;
+    }
     expect(() => writeSaveFile(p, Buffer.from("x"))).toThrow();
     expect(readFileSync(target, "utf-8")).toBe("example-secret-not-real");
+  });
+
+  it("creates nothing through a dangling symlink swapped in after the check", (ctx) => {
+    const target = join(dir, "not-yet-created.json");
+    const p = join(dir, "swapped-dangling.bin");
+    try { symlinkSync(target, p, "file"); } catch (err) {
+      if (process.platform === "win32" && (err as NodeJS.ErrnoException).code === "EPERM") ctx.skip();
+      throw err;
+    }
+    expect(() => writeSaveFile(p, Buffer.from("x"))).toThrow();
+    expect(existsSync(target)).toBe(false);
   });
 });

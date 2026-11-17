@@ -131,13 +131,21 @@ export function resolveSavePath(rawPath: string, root: string = process.cwd()): 
 }
 
 /**
- * Write `data` to a path from `resolveSavePath`. The file is opened without
- * truncating and re-checked before any byte changes, so a symlink or hard link
- * swapped in after the check is refused. O_NOFOLLOW (not on Windows) also stops
- * the open itself from following a symlink.
+ * Write `data` to a path from `resolveSavePath`. A new file is created with
+ * O_EXCL, so nothing is created through a symlink swapped in after the check.
+ * An existing file is opened without O_CREAT or truncation and re-checked
+ * before any byte changes, so a symlink or hard link swapped in is refused.
+ * O_NOFOLLOW (not on Windows) also stops the open itself following a symlink.
  */
 export function writeSaveFile(path: string, data: Buffer): void {
-  const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0));
+  const nofollow = constants.O_NOFOLLOW ?? 0;
+  let fd: number;
+  try {
+    fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | nofollow);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+    fd = openSync(path, constants.O_WRONLY | nofollow);
+  }
   try {
     const st = fstatSync(fd);
     if (!st.isFile() || st.nlink > 1 || lstatSync(path).isSymbolicLink()) {
