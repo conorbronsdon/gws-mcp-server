@@ -81,7 +81,7 @@ jobs:
           PKG="$(node -p "require('./package.json').name")"
           for attempt in $(seq 1 10); do
             [ "$(npm view "$PKG@$VERSION" version 2>/dev/null)" = "$VERSION" ] && break
-            [ "$attempt" = 10 ] && { echo "::error::$PKG@$VERSION is still not on npm after ~5 minutes; not publishing to the MCP registry or creating a GitHub release for an unpublished version. Re-run the workflow once npm serves it."; exit 1; }
+            [ "$attempt" = 10 ] && { echo "::error::$PKG@$VERSION is still not on npm after ~5 minutes; not publishing to the MCP registry or creating a GitHub release for an unpublished version. Once npm serves it, start Publish manually (workflow_dispatch): a plain re-run of this push skips the registry leg."; exit 1; }
             sleep 30
           done
           echo "npm serves $PKG@$VERSION."
