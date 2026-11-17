@@ -5,8 +5,8 @@
  */
 
 import { spawn } from "node:child_process";
-import { resolve, normalize } from "node:path";
-import { existsSync } from "node:fs";
+import { resolve, normalize, relative, isAbsolute, sep } from "node:path";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import type { ToolDef } from "./services.js";
 import { mapGwsErrorToTyped } from "./errors.js";
 import { resolveGwsCommand } from "./windows-binary.js";
@@ -18,29 +18,74 @@ const MAX_OUTPUT = 100_000;
 const UPLOAD_DISALLOWED_RE = /[&|<>^%()!]/;
 
 /**
- * Validate and sanitize a file upload path.
- * Rejects paths containing shell metacharacters or path traversal sequences.
+ * The real path of the directory local file paths must stay inside.
+ *
+ * Defaults to the server's working directory, which is also where current gws
+ * builds confine `--upload` and `-o`.
  */
-export function sanitizeUploadPath(rawPath: string): string {
+export function resolveFileRoot(root: string = process.cwd()): string {
+  const real = realpathSync.native(resolve(root));
+  if (!statSync(real).isDirectory()) {
+    throw new Error(`File root is not a directory: ${root}`);
+  }
+  return real;
+}
+
+/**
+ * Whether `realPath` sits strictly below `realRoot`. Both must already be real
+ * paths. Uses `relative()` rather than a prefix compare, so `/a/root-x` is not
+ * inside `/a/root`, and a path on another Windows drive (where `relative()`
+ * returns an absolute path) is refused.
+ */
+export function isInsideRoot(realPath: string, realRoot: string): boolean {
+  const rel = relative(realRoot, realPath);
+  return !(rel === "" || isAbsolute(rel) || rel === ".." || rel.startsWith(".." + sep));
+}
+
+/**
+ * Validate and sanitize a file upload path.
+ * Rejects paths containing shell metacharacters or path traversal sequences,
+ * and any file whose real path (symlinks resolved) is outside `root`. A
+ * relative path is resolved against `root`. Returns the real path, so gws
+ * reads the file that was checked.
+ */
+export function sanitizeUploadPath(rawPath: string, root: string = process.cwd()): string {
   // Reject disallowed path characters
   if (UPLOAD_DISALLOWED_RE.test(rawPath) || /[;`$]/.test(rawPath)) {
     throw new Error(`Upload path contains disallowed characters: ${rawPath}`);
   }
 
-  // Resolve to absolute and normalize (collapses ../ etc.)
-  const resolved = resolve(normalize(rawPath));
-
-  // Reject if the resolved path still contains traversal indicators
+  // Reject if the raw path contains traversal indicators
   if (rawPath.includes("..")) {
     throw new Error(`Upload path must not contain path traversal (..): ${rawPath}`);
   }
+
+  const realRoot = resolveFileRoot(root);
+  const resolved = resolve(realRoot, normalize(rawPath));
 
   // Verify the file exists
   if (!existsSync(resolved)) {
     throw new Error(`Upload file does not exist: ${resolved}`);
   }
 
-  return resolved;
+  const real = realpathSync.native(resolved);
+  if (!isInsideRoot(real, realRoot)) {
+    throw new Error(
+      `Upload path is outside the file root (${realRoot}): ${rawPath}. ` +
+        "Move the file under the root, or start the server with --file-root <dir>.",
+    );
+  }
+  // A hard link shares its inode with a file that may live outside the root,
+  // and realpath cannot tell. Refuse any file with more than one link.
+  const st = statSync(real);
+  if (!st.isFile()) {
+    throw new Error(`Upload path is not a regular file: ${rawPath}`);
+  }
+  if (st.nlink > 1) {
+    throw new Error(`Upload path is a hard link (${st.nlink} links), so it may alias a file outside the file root: ${rawPath}`);
+  }
+
+  return real;
 }
 
 export interface ExecResult {
@@ -55,6 +100,7 @@ export interface ExecResult {
 export function buildArgs(
   tool: ToolDef,
   args: Record<string, unknown>,
+  fileRoot: string = process.cwd(),
 ): string[] {
   const cliArgs = [...tool.command];
 
@@ -96,7 +142,7 @@ export function buildArgs(
 
   // File upload — validate path before passing to CLI
   if (tool.supportsUpload && args.uploadPath) {
-    const safePath = sanitizeUploadPath(String(args.uploadPath));
+    const safePath = sanitizeUploadPath(String(args.uploadPath), fileRoot);
     cliArgs.push("--upload", safePath);
   }
 
@@ -194,8 +240,9 @@ export async function executeGws(
   tool: ToolDef,
   args: Record<string, unknown>,
   gwsBinary: string,
+  fileRoot: string = process.cwd(),
 ): Promise<ExecResult> {
-  const cliArgs = buildArgs(tool, args);
+  const cliArgs = buildArgs(tool, args, fileRoot);
 
   // Log the subcommand only. cliArgs carries --params and --json, which hold
   // the full request body: spreadsheet cell values, inserted document text,

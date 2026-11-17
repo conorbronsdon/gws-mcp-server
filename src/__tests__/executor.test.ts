@@ -1,6 +1,9 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterAll, describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { fileURLToPath } from "node:url";
+import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative } from "node:path";
 import type { ToolDef } from "../services.js";
 
 // executeGws spawns the gws CLI via node:child_process's spawn(). Mock it so
@@ -37,6 +40,95 @@ describe("sanitizeUploadPath", () => {
 
   it("rejects nonexistent files", () => {
     expect(() => sanitizeUploadPath("/nonexistent/path/to/file.txt")).toThrow("does not exist");
+  });
+});
+
+describe("sanitizeUploadPath file root", () => {
+  // Layout: <base>/root is the file root; <base>/root-sibling and <base>/outside
+  // sit next to it. The sibling shares the root's string prefix.
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "gws-upload-root-")));
+  const root = join(base, "root");
+  const outside = join(base, "outside");
+  const sibling = join(base, "root-sibling");
+  for (const d of [root, join(root, "sub"), outside, sibling]) mkdirSync(d, { recursive: true });
+  const inRoot = join(root, "sub", "report.txt");
+  const secret = join(outside, "example-client_secret.json");
+  const siblingFile = join(sibling, "file.txt");
+  for (const f of [inRoot, secret, siblingFile]) writeFileSync(f, "example");
+  const uploadTool: ToolDef = {
+    name: "drive_files_create", description: "", command: ["drive", "files", "create"],
+    params: [], supportsUpload: true,
+  };
+
+  afterAll(() => rmSync(base, { recursive: true, force: true }));
+
+  it("accepts an absolute path inside the root and returns its real path", () => {
+    expect(sanitizeUploadPath(inRoot, root)).toBe(realpathSync.native(inRoot));
+  });
+
+  it("refuses an absolute path outside the root", () => {
+    expect(() => sanitizeUploadPath(secret, root)).toThrow("outside the file root");
+  });
+
+  it("refuses a directory that only shares the root's name prefix", () => {
+    expect(() => sanitizeUploadPath(siblingFile, root)).toThrow("outside the file root");
+  });
+
+  it("refuses the root directory itself", () => {
+    expect(() => sanitizeUploadPath(root, root)).toThrow("outside the file root");
+  });
+
+  it("resolves a relative path against the root, not the server's working directory", () => {
+    expect(sanitizeUploadPath(join("sub", "report.txt"), root)).toBe(realpathSync.native(inRoot));
+    expect(() => sanitizeUploadPath(relative(root, secret), root)).toThrow();
+  });
+
+  it("defaults the root to the working directory", () => {
+    expect(() => sanitizeUploadPath(secret)).toThrow("outside the file root");
+    expect(sanitizeUploadPath("package.json")).toBe(realpathSync.native(join(process.cwd(), "package.json")));
+  });
+
+  it("refuses a hard link inside the root to a file outside it", () => {
+    const link = join(root, "hardlink.json");
+    linkSync(secret, link);
+    expect(() => sanitizeUploadPath(link, root)).toThrow("hard link");
+  });
+
+  it("buildArgs passes the checked real path to --upload and refuses an out-of-root path", () => {
+    expect(buildArgs(uploadTool, { uploadPath: inRoot }, root)).toEqual([
+      "drive", "files", "create", "--upload", realpathSync.native(inRoot),
+    ]);
+    expect(() => buildArgs(uploadTool, { uploadPath: secret }, root)).toThrow("outside the file root");
+  });
+
+  // Symlink creation needs a privilege on Windows (WinError 1314 / EPERM), so
+  // these skip there when the link cannot be made.
+  function trySymlink(target: string, path: string, type?: "dir" | "file"): boolean {
+    try { symlinkSync(target, path, type); return true; } catch { return false; }
+  }
+
+  it("refuses a symlink inside the root that points outside it", (ctx) => {
+    const link = join(root, "link-to-secret.json");
+    if (!trySymlink(secret, link, "file")) ctx.skip();
+    expect(() => sanitizeUploadPath(link, root)).toThrow("outside the file root");
+  });
+
+  it("refuses a path through a symlinked directory that points outside", (ctx) => {
+    const link = join(root, "dirlink");
+    if (!trySymlink(outside, link, "dir")) ctx.skip();
+    expect(() => sanitizeUploadPath(join(link, "example-client_secret.json"), root)).toThrow("outside the file root");
+  });
+
+  it("accepts a symlink inside the root that points to another file inside it", (ctx) => {
+    const link = join(root, "link-to-report.txt");
+    if (!trySymlink(inRoot, link, "file")) ctx.skip();
+    expect(sanitizeUploadPath(link, root)).toBe(realpathSync.native(inRoot));
+  });
+
+  it("accepts files under a root given as a symlink to the real directory", (ctx) => {
+    const rootLink = join(base, "root-link");
+    if (!trySymlink(root, rootLink, "dir")) ctx.skip();
+    expect(sanitizeUploadPath(inRoot, rootLink)).toBe(realpathSync.native(inRoot));
   });
 });
 

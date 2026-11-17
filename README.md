@@ -146,6 +146,7 @@ append `people` to the service list:
 | `--services, -s` | Comma-separated list of services to expose | Core services; `people` is opt-in |
 | `--gws-path` | Path to the `gws` binary | `GWS_BINARY` or `gws` |
 | `--read-only` | Register only the read-only tools | off |
+| `--file-root <dir>` | Directory that `uploadPath` files must resolve inside | working directory |
 
 On Windows, npm's `gws.cmd` is resolved to its JavaScript entry point and run with Node. `--gws-path` or `GWS_BINARY` may also point directly to a JavaScript entry point or `.exe`.
 
@@ -159,6 +160,16 @@ gws-mcp-server --read-only --services drive,calendar   # combines with -s
 ```
 
 This constrains the **agent, not the credential**. The token on disk keeps whatever scopes it was granted, and anything else on the machine can still use it. `gws auth login --readonly` is what narrows the token; the two are complementary. For an MCP server the agent is the threat model, but that is the limit of the claim.
+
+### `--file-root`
+
+Tools that take `uploadPath` read a local file and send it to Drive. The path must resolve inside the file root after symlinks are followed, so an agent cannot upload `~/.config/gws/client_secret.json`, `~/.config/gcloud` credentials or an `~/.ssh` key from outside it. A relative `uploadPath` resolves against the root. Hard-linked files are refused, since a hard link can alias a file outside the root. The root defaults to the server's working directory (`/app` in the Docker image). Point it at a dedicated directory rather than your home directory:
+
+```bash
+gws-mcp-server --file-root ~/gws-uploads
+```
+
+Current gws builds also confine `--upload` to their own working directory, which is the server's working directory. If you set `--file-root` somewhere else, start the server from that directory too.
 
 ### Trimming context cost
 

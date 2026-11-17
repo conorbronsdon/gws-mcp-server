@@ -28,7 +28,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, unlinkSync, existsSync, copyFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { getToolsForServices, ALL_SERVICES, DEFAULT_SERVICES, buildAnnotations, type ToolDef } from "./services.js";
-import { executeGws, spawnGwsRaw } from "./executor.js";
+import { executeGws, resolveFileRoot, spawnGwsRaw } from "./executor.js";
 import { resolveGwsCommand } from "./windows-binary.js";
 import { buildRfc2822, base64url } from "./mime.js";
 import { runAuthCli } from "./auth.js";
@@ -52,15 +52,23 @@ export const SERVER_VERSION: string = JSON.parse(
 
 // ── CLI argument parsing ───────────────────────────────────────────────
 
-function parseArgs(): { services: string[]; gwsBinary: string; readOnly: boolean } {
+function parseArgs(): { services: string[]; gwsBinary: string; readOnly: boolean; fileRoot: string } {
   const args = process.argv.slice(2);
   let services = [...DEFAULT_SERVICES];
   let gwsBinary = process.env.GWS_BINARY || "gws";
   let readOnly = false;
+  let fileRoot = process.cwd();
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--read-only") {
       readOnly = true;
+    } else if (args[i] === "--file-root") {
+      const val = args[++i];
+      if (!val) {
+        console.error("[gws-mcp] --file-root needs a directory");
+        process.exit(1);
+      }
+      fileRoot = val;
     } else if (args[i] === "--services" || args[i] === "-s") {
       const val = args[++i];
       if (val) {
@@ -85,6 +93,9 @@ OPTIONS:
   --gws-path <path>       Path to gws binary (default: GWS_BINARY or "gws")
   --read-only             Register only the read-only tools. No tool that
                           writes to Google is exposed at all.
+  --file-root <dir>       Directory that local file paths (uploadPath) must
+                          resolve inside, symlinks followed
+                          (default: the working directory)
   --help, -h              Show this help
 
 COMMANDS:
@@ -101,7 +112,14 @@ EXAMPLE:
     }
   }
 
-  return { services, gwsBinary, readOnly };
+  try {
+    fileRoot = resolveFileRoot(fileRoot);
+  } catch (err) {
+    console.error(`[gws-mcp] Invalid --file-root ${fileRoot}: ${(err as Error).message}`);
+    process.exit(1);
+  }
+
+  return { services, gwsBinary, readOnly, fileRoot };
 }
 
 /**
@@ -275,7 +293,7 @@ async function main() {
     return;
   }
 
-  const { services, gwsBinary, readOnly } = parseArgs();
+  const { services, gwsBinary, readOnly, fileRoot } = parseArgs();
 
   const gwsAvailable = validateGwsBinary(gwsBinary);
 
@@ -291,7 +309,7 @@ async function main() {
   );
   console.error(`[gws-mcp] Using gws binary: ${gwsBinary}`);
 
-  const server = createServer(tools, services, gwsBinary, gwsAvailable, readOnly);
+  const server = createServer(tools, services, gwsBinary, gwsAvailable, readOnly, fileRoot);
 
   // Connect via stdio
   const transport = new StdioServerTransport();
@@ -315,6 +333,7 @@ export function createServer(
   gwsBinary: string,
   gwsAvailable: boolean,
   readOnly = false,
+  fileRoot: string = process.cwd(),
 ): McpServer {
   const server = new McpServer({
     name: "gws-mcp-server",
@@ -338,7 +357,7 @@ export function createServer(
         annotations: buildAnnotations(tool),
       },
       async (args) => {
-        const result = await executeGws(tool, args as Record<string, unknown>, gwsBinary);
+        const result = await executeGws(tool, args as Record<string, unknown>, gwsBinary, fileRoot);
 
         if (result.success) {
           return {
