@@ -39,6 +39,7 @@ Most tests are unit tests mocking the executor layer. No test hits the real gws 
 - `drive-download.e2e.test.ts` — `drive_files_download` through a real MCP client and `fixtures/fake-gws-drive.cjs`: text vs. binary handling follows the downloaded (export) MIME type
 - `executor.windows.test.ts` — Windows-only: round-trips argument values through an npm-style `.cmd` shim (`fixtures/argv-dump.cmd`) with `shell: false`
 - `publish-workflow.test.ts` — Registry gate in `.github/workflows/publish.yml`
+- `workflow-pinning.test.ts` — Every workflow action pinned to a full commit SHA; Dependabot watches `github-actions`
 
 ## Agent workflow
 - Always work on a branch. Never push directly to main.
