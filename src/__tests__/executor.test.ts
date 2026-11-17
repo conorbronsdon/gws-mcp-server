@@ -253,6 +253,79 @@ describe("executeGws", () => {
     expect(result.error).toBe("connect ECONNREFUSED 127.0.0.1:443");
   });
 
+  // What gws actually prints on an API failure (gws src/error.rs,
+  // print_error_json): the JSON body on stdout, a status-free one-line summary
+  // on stderr, exit code 1.
+  const GWS_404_STDOUT = JSON.stringify(
+    { error: { code: 404, message: "File not found: example-file-id", reason: "notFound" } },
+    null,
+    2,
+  ) + "\n";
+  const GWS_404_STDERR = "error[api]: File not found: example-file-id\n";
+
+  it("maps gws's real failure shape (JSON on stdout, summary on stderr) to a typed error", async () => {
+    const proc = makeFakeProc();
+    vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+
+    const resultPromise = executeGws(driveTool, {}, mockGws);
+    proc.stdout.emit("data", Buffer.from(GWS_404_STDOUT));
+    proc.stderr.emit("data", Buffer.from(GWS_404_STDERR));
+    proc.emit("close", 1);
+
+    const result = await resultPromise;
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(
+      "Not found (404): File not found: example-file-id.\n\nHint: If this file is in a shared drive, ensure supportsAllDrives is set (this should be automatic). Check that the file ID is correct and the authenticated account has access.",
+    );
+  });
+
+  it("maps gws's auth failure (exit 2, code 401 on stdout) to an authentication error", async () => {
+    const proc = makeFakeProc();
+    vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+
+    const resultPromise = executeGws(sheetsTool, {}, mockGws);
+    proc.stdout.emit(
+      "data",
+      Buffer.from(JSON.stringify({ error: { code: 401, message: "example-token expired", reason: "authError" } })),
+    );
+    proc.stderr.emit("data", Buffer.from("error[auth]: example-token expired\n"));
+    proc.emit("close", 2);
+
+    const result = await resultPromise;
+    expect(result.error).toBe(
+      'Authentication error (401): example-token expired. Check that the gws CLI is authenticated ("gws auth login") and that the credentials have access to the requested Google Workspace resource.',
+    );
+  });
+
+  it("rejects spawnGwsRaw with the stdout JSON body, not the stderr summary", async () => {
+    const proc = makeFakeProc();
+    vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+
+    const pending = spawnGwsRaw(mockGws, []);
+    proc.stdout.emit("data", Buffer.from(GWS_404_STDOUT));
+    proc.stderr.emit("data", Buffer.from(GWS_404_STDERR));
+    proc.emit("close", 1);
+
+    await expect(pending).rejects.toThrow(new Error(GWS_404_STDOUT.trim()));
+  });
+
+  it("still prefers stderr when stdout is not a JSON error body", async () => {
+    // Must-not-fire: a non-error JSON object or plain text on stdout keeps the
+    // old stderr-first order.
+    for (const stdout of ['{"id":"example-file-id"}', "partial output"]) {
+      const proc = makeFakeProc();
+      vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+
+      const resultPromise = executeGws(driveTool, {}, mockGws);
+      proc.stdout.emit("data", Buffer.from(stdout));
+      proc.stderr.emit("data", Buffer.from("connect ECONNREFUSED 127.0.0.1:443"));
+      proc.emit("close", 1);
+
+      const result = await resultPromise;
+      expect(result.error).toBe("connect ECONNREFUSED 127.0.0.1:443");
+    }
+  });
+
   it("returns success with stdout when the process exits 0", async () => {
     const proc = makeFakeProc();
     vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
