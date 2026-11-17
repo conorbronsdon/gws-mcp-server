@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import { fileURLToPath } from "node:url";
 import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import type { ToolDef } from "../services.js";
 
 // executeGws spawns the gws CLI via node:child_process's spawn(). Mock it so
@@ -14,7 +14,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { spawn } from "node:child_process";
-import { buildArgs, sanitizeUploadPath, executeGws, gwsNotFoundMessage, spawnGwsRaw } from "../executor.js";
+import { buildArgs, sanitizeUploadPath, isInsideRoot, executeGws, gwsNotFoundMessage, spawnGwsRaw } from "../executor.js";
 import { GwsBinaryConfigurationError, resolveGwsCommand } from "../windows-binary.js";
 
 const mockGws = fileURLToPath(new URL("./fixtures/argv-dump.cjs", import.meta.url));
@@ -40,6 +40,23 @@ describe("sanitizeUploadPath", () => {
 
   it("rejects nonexistent files", () => {
     expect(() => sanitizeUploadPath("/nonexistent/path/to/file.txt")).toThrow("does not exist");
+  });
+});
+
+describe("isInsideRoot", () => {
+  const r = join(tmpdir(), "gws-root");
+  it("is true only for paths strictly below the root", () => {
+    expect(isInsideRoot(join(r, "a.txt"), r)).toBe(true);
+    expect(isInsideRoot(join(r, "sub", "a.txt"), r)).toBe(true);
+    expect(isInsideRoot(r, r)).toBe(false);
+    expect(isInsideRoot(r + sep, r)).toBe(false);
+    expect(isInsideRoot(`${r}-sibling${sep}a.txt`, r)).toBe(false);
+    expect(isInsideRoot(join(r, "..", "a.txt"), r)).toBe(false);
+    expect(isInsideRoot(dirname(r), r)).toBe(false);
+  });
+
+  it.runIf(process.platform === "win32")("is false for a path on another drive", () => {
+    expect(isInsideRoot("D:\\root\\a.txt", "C:\\root")).toBe(false);
   });
 });
 

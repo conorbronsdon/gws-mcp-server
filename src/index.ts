@@ -52,8 +52,9 @@ export const SERVER_VERSION: string = JSON.parse(
 
 // ── CLI argument parsing ───────────────────────────────────────────────
 
-function parseArgs(): { services: string[]; gwsBinary: string; readOnly: boolean; fileRoot: string } {
-  const args = process.argv.slice(2);
+export function parseArgs(
+  args: string[] = process.argv.slice(2),
+): { services: string[]; gwsBinary: string; readOnly: boolean; fileRoot: string } {
   let services = [...DEFAULT_SERVICES];
   let gwsBinary = process.env.GWS_BINARY || "gws";
   let readOnly = false;

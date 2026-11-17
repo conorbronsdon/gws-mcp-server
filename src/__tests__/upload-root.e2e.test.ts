@@ -4,14 +4,14 @@
  * file (for example a credential file) never reaches gws.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createServer } from "../index.js";
+import { createServer, parseArgs } from "../index.js";
 import { getToolsForServices } from "../services.js";
 
 let base: string;
@@ -80,9 +80,47 @@ describe("drive_files_create uploadPath with an unresolvable file root", () => {
     expect(result.isError).toBe(true);
     const text = (result.content as Array<{ text: string }>)[0].text;
     expect(text).toContain("File root is not accessible");
-    expect(text).not.toContain("ENOENT");
+    expect(text).toContain(join(base, "gone"));
+    for (const raw of ["ENOENT", "EACCES", "realpath"]) expect(text).not.toContain(raw);
     let ran = false;
     try { ran = readFileSync(marker, "utf-8") === "1"; } catch { /* gws never ran */ }
     expect(ran).toBe(false);
+  });
+});
+
+describe("--file-root at startup", () => {
+  function exitOf(args: string[]) {
+    const exit = vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Error(`exit ${code}`);
+    }) as never);
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      parseArgs(args);
+      return { code: undefined, stderr: "" };
+    } catch (e) {
+      return { code: (e as Error).message, stderr: err.mock.calls.map((c) => c.join(" ")).join("\n") };
+    } finally {
+      exit.mockRestore();
+      err.mockRestore();
+    }
+  }
+
+  it("exits 1 naming the flag and the value for a missing directory", () => {
+    const bad = join(base, "no-such-dir");
+    const r = exitOf(["--file-root", bad]);
+    expect(r.code).toBe("exit 1");
+    expect(r.stderr).toContain("--file-root");
+    expect(r.stderr).toContain(JSON.stringify(bad));
+  });
+
+  it("exits 1 for a file that is not a directory", () => {
+    const r = exitOf(["--file-root", join(root, "report.txt")]);
+    expect(r.code).toBe("exit 1");
+    expect(r.stderr).toContain("not a directory");
+  });
+
+  it("control: resolves a valid --file-root and the default to real paths", () => {
+    expect(parseArgs(["--file-root", root]).fileRoot).toBe(realpathSync.native(root));
+    expect(parseArgs([]).fileRoot).toBe(realpathSync.native(process.cwd()));
   });
 });

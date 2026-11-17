@@ -28,8 +28,11 @@ export function resolveFileRoot(root: string = process.cwd()): string {
   try {
     real = realpathSync.native(resolve(root));
   } catch {
+    // A default root that could not be resolved at startup is still ".", and
+    // process.cwd() itself throws once the working directory is gone.
+    const label = root === "." ? "the server's working directory" : root;
     throw new Error(
-      `File root is not accessible: ${root}. Start the server with a valid --file-root.`,
+      `File root is not accessible: ${label}. Start the server with a valid --file-root.`,
     );
   }
   if (!statSync(real).isDirectory()) {
@@ -91,7 +94,10 @@ export function sanitizeUploadPath(rawPath: string, root: string = process.cwd()
     throw new Error(`Upload path is not a regular file: ${rawPath}`);
   }
   if (st.nlink > 1) {
-    throw new Error(`Upload path is a hard link (${st.nlink} links), so it may alias a file outside the file root: ${rawPath}`);
+    throw new Error(
+      `Upload path is a hard link (${st.nlink} links), so it may alias a file outside the file root: ${rawPath}. ` +
+        "Upload a plain copy instead (cp without -l or -a).",
+    );
   }
 
   return real;
