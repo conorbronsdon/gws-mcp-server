@@ -982,7 +982,8 @@ describe("drive_comments_create anchor", () => {
 // null unless the param is literalString. That is how `requests`, `values`
 // and `attendees` reach the API as structures — but on a free-text or scalar
 // field it rewrites what the caller typed: a task note "null" became
-// `notes: null` and cleared the note under patch, and a comment whose text
+// `notes: null` (under patch semantics that would clear the note; not verified
+// against the live API), and a comment whose text
 // was '{"status":"ok"}' was sent as an object. Every body param that is not
 // documented as taking JSON must go through verbatim.
 describe("free-text body params", () => {
