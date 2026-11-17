@@ -7,6 +7,12 @@ on:
       - package.json
   workflow_dispatch:
 
+# Serialize publishes: each step checks a target, then writes it; overlapping runs
+# could both see "missing". Never cancel a run mid-publish.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
 permissions:
   contents: write
   id-token: write
@@ -125,6 +131,7 @@ jobs:
       # Gated on "the release is missing", never on "npm published in this run": a
       # catch-up dispatch after an npm-lag failure must still finish the release.
       - name: Create GitHub release
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.local }}
@@ -133,10 +140,14 @@ jobs:
             echo "Release v$VERSION already exists — skipping."
             exit 0
           fi
-          if [ "$(npm view "$(node -p "require('./package.json').name")@$VERSION" version 2>/dev/null)" != "$VERSION" ]; then
-            echo "::error::$VERSION is not on npm yet; not creating a GitHub release for an unpublished version. Re-run once npm serves it."
-            exit 1
-          fi
+          # npm can take a minute or more to serve a version it just accepted, so wait
+          # (bounded) rather than fail the normal path right after a publish.
+          PKG="$(node -p "require('./package.json').name")"
+          for attempt in $(seq 1 10); do
+            [ "$(npm view "$PKG@$VERSION" version 2>/dev/null)" = "$VERSION" ] && break
+            [ "$attempt" = 10 ] && { echo "::error::$PKG@$VERSION is still not on npm after ~5 minutes; not creating a GitHub release for an unpublished version. Re-run the workflow once npm serves it."; exit 1; }
+            sleep 30
+          done
           # Target main's own commit that set this version (first parent, so a merge
           # commit counts), not whatever HEAD is when a catch-up runs.
           SETS_VERSION="\"version\"[[:space:]]*:[[:space:]]*\"${VERSION//./\\.}\""
