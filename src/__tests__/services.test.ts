@@ -883,6 +883,11 @@ describe("tool annotation classifications", () => {
     expect(buildAnnotations(byName.get("calendar_events_update")!).idempotentHint).toBe(false);
   });
 
+  it("calendar_events_update sendUpdates says it does not decide who is uninvited", () => {
+    const sendUpdates = byName.get("calendar_events_update")!.params.find((p) => p.name === "sendUpdates")!;
+    expect(sendUpdates.description).toMatch(/uninvited whatever this is set to; it only decides whether they are emailed$/);
+  });
+
   it("gmail_threads_modify is a non-destructive write (TRASH is reversible)", () => {
     // Judgment call: this tool can apply the TRASH label, but label changes
     // are reversible, so it stays readOnlyHint:false with destructiveHint:false.

@@ -551,7 +551,7 @@ const calendarTools: ToolDef[] = [
     params: [
       { name: "calendarId", description: "Calendar ID", type: "string", required: true },
       { name: "eventId", description: "Event ID to update", type: "string", required: true },
-      { name: "sendUpdates", description: "Sends update email to attendees when set: \"all\", \"externalOnly\", or \"none\" (default: none — no email). With \"all\" or \"externalOnly\", attendees removed by this update receive a cancellation email", type: "string", required: false, enum: ["all", "externalOnly", "none"] },
+      { name: "sendUpdates", description: "Sends update email to attendees when set: \"all\", \"externalOnly\", or \"none\" (default: none — no email). With \"all\" or \"externalOnly\", attendees removed by this update receive a cancellation email. Omitted attendees are uninvited whatever this is set to; it only decides whether they are emailed", type: "string", required: false, enum: ["all", "externalOnly", "none"] },
     ],
     bodyParams: [
       { name: "summary", description: "Event title", type: "string", required: false, literalString: true },
