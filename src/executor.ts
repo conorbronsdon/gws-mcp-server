@@ -6,7 +6,7 @@
 
 import { spawn } from "node:child_process";
 import { resolve, normalize, relative, isAbsolute, sep, dirname, basename, join } from "node:path";
-import { closeSync, constants, existsSync, lstatSync, openSync, realpathSync, statSync, writeSync } from "node:fs";
+import { closeSync, constants, existsSync, lstatSync, openSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import type { ToolDef } from "./services.js";
 import { mapGwsErrorToTyped } from "./errors.js";
 import { resolveGwsCommand } from "./windows-binary.js";
@@ -135,7 +135,7 @@ export function resolveSavePath(rawPath: string, root: string = process.cwd()): 
 export function writeSaveFile(path: string, data: Buffer): void {
   const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0));
   try {
-    writeSync(fd, data);
+    writeFileSync(fd, data); // loops until every byte is written; a bare writeSync may stop short
   } finally {
     closeSync(fd);
   }
