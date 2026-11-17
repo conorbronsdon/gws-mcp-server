@@ -180,7 +180,7 @@ const driveTools: ToolDef[] = [
   },
   {
     name: "drive_files_update",
-    description: "Update a file's metadata or content.",
+    description: "Update a file's metadata or content. An uploadPath replaces the file's content and no copy of the old content is kept. Because it can do that, the whole tool is marked destructive, including calls without uploadPath.",
     command: ["drive", "files", "update"],
     params: [
       { name: "fileId", description: "The file ID to update", type: "string", required: true },
@@ -192,6 +192,8 @@ const driveTools: ToolDef[] = [
     ],
     supportsUpload: true,
     defaultParams: DRIVE_SHARED_DEFAULTS_NO_INCLUDE,
+    // destructive: with uploadPath this replaces the file's content.
+    destructive: true,
     idempotent: true,
   },
   {
@@ -332,7 +334,7 @@ const driveTools: ToolDef[] = [
     bodyParams: [
       { name: "content", description: "New comment text", type: "string", required: true, literalString: true },
     ],
-    // Matches drive_permissions_update/drive_files_update: repeating the
+    // Idempotency matches drive_permissions_update/drive_files_update: repeating the
     // same content leaves the comment in the same end state.
     destructive: true,
     idempotent: true,
@@ -407,7 +409,7 @@ const driveTools: ToolDef[] = [
     bodyParams: [
       { name: "content", description: "New reply text", type: "string", required: true, literalString: true },
     ],
-    // Matches drive_permissions_update/drive_files_update: repeating the
+    // Idempotency matches drive_permissions_update/drive_files_update: repeating the
     // same content leaves the reply in the same end state.
     destructive: true,
     idempotent: true,
@@ -453,7 +455,7 @@ const sheetsTools: ToolDef[] = [
   },
   {
     name: "sheets_values_update",
-    description: "Write values to a spreadsheet range.",
+    description: "Write values to a spreadsheet range. Overwrites the values already in the range; the previous values are not kept, so this tool is marked destructive.",
     command: ["sheets", "spreadsheets", "values", "update"],
     params: [
       { name: "spreadsheetId", description: "The spreadsheet ID", type: "string", required: true },
@@ -463,6 +465,8 @@ const sheetsTools: ToolDef[] = [
     bodyParams: [
       { name: "values", description: "2D array of values as JSON string (e.g. '[[\"A\",\"B\"],[\"C\",\"D\"]]')", type: "string", required: true },
     ],
+    // destructive: overwrites whatever was in the range; no copy is kept.
+    destructive: true,
     idempotent: true,
   },
   {
@@ -542,12 +546,12 @@ const calendarTools: ToolDef[] = [
   },
   {
     name: "calendar_events_update",
-    description: "Update an existing calendar event with patch semantics (only supplied fields change).",
+    description: "Update an existing calendar event with patch semantics (only supplied fields change). attendees replaces the whole list and anyone omitted is uninvited. Because it can do that, the whole tool is marked destructive, including calls without attendees.",
     command: ["calendar", "events", "patch"],
     params: [
       { name: "calendarId", description: "Calendar ID", type: "string", required: true },
       { name: "eventId", description: "Event ID to update", type: "string", required: true },
-      { name: "sendUpdates", description: "Sends update email to attendees when set: \"all\", \"externalOnly\", or \"none\" (default: none — no email). With \"all\" or \"externalOnly\", attendees removed by this update receive a cancellation email", type: "string", required: false, enum: ["all", "externalOnly", "none"] },
+      { name: "sendUpdates", description: "Sends update email to attendees when set: \"all\", \"externalOnly\", or \"none\" (default: none — no email). With \"all\" or \"externalOnly\", attendees removed by this update receive a cancellation email. Omitted attendees are uninvited whatever this is set to; it only decides whether they are emailed", type: "string", required: false, enum: ["all", "externalOnly", "none"] },
     ],
     bodyParams: [
       { name: "summary", description: "Event title", type: "string", required: false, literalString: true },
@@ -558,6 +562,10 @@ const calendarTools: ToolDef[] = [
     ],
     // Not marked idempotent since sendUpdates landed: with "all"/"externalOnly",
     // every retry re-emails all attendees — an additional effect per call.
+    // destructive: attendees replaces the whole list, uninviting anyone
+    // omitted regardless of sendUpdates; sendUpdates only decides whether
+    // they are also emailed a cancellation.
+    destructive: true,
   },
   {
     name: "calendar_events_delete",
@@ -980,7 +988,7 @@ const peopleTools: ToolDef[] = [
       { name: "phoneNumbers", description: "Array of PhoneNumber objects as JSON string", type: "string", required: false },
       { name: "organizations", description: "Array of Organization objects as JSON string", type: "string", required: false },
     ],
-    // Matches drive_permissions_update/drive_files_update: repeating the
+    // Idempotency matches drive_permissions_update/drive_files_update: repeating the
     // same update leaves the contact in the same end state. destructive
     // because replacing e.g. emailAddresses/phoneNumbers wholesale removes
     // whatever was there before, not just an additive change.

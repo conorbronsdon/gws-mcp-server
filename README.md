@@ -185,7 +185,7 @@ A service's tool count (headers below) tracks its context cost: dropping `drive`
 - `drive_files_get` — Get file metadata
 - `drive_files_create` — Create files (with optional upload)
 - `drive_files_copy` — Copy files (useful for format conversion)
-- `drive_files_update` — Update file metadata/content
+- `drive_files_update` — Update file metadata/content (an `uploadPath` replaces the file's content; destructive)
 - `drive_files_delete` — Delete files
 - `drive_files_export` — Export Google Workspace files (Doc, Sheet, Slide) to other formats
 - `drive_files_download` — Download file content (text inline, binary as base64 or saved to a path; Google-native files are exported to a readable format)
@@ -209,7 +209,7 @@ A service's tool count (headers below) tracks its context cost: dropping `drive`
 ### `sheets` (5 tools)
 - `sheets_get` — Get spreadsheet metadata
 - `sheets_values_get` — Read cell values
-- `sheets_values_update` — Write cell values
+- `sheets_values_update` — Write cell values (overwrites the range; destructive)
 - `sheets_values_append` — Append rows
 - `sheets_batchUpdate` — Apply updates to a spreadsheet (conditional formatting, cell/border formatting, adding sheets, and more; delete requests are permanent)
 
@@ -217,7 +217,7 @@ A service's tool count (headers below) tracks its context cost: dropping `drive`
 - `calendar_events_list` — List events
 - `calendar_events_get` — Get event details
 - `calendar_events_insert` — Create events, optionally with `attendees`. `sendUpdates` controls invitation email (default `none` — no email, though the event may still appear on attendees' calendars depending on their settings)
-- `calendar_events_update` — Update events (only supplied fields change — except `attendees`, which replaces the whole list; omitted attendees are uninvited). Same `sendUpdates` support as insert
+- `calendar_events_update` — Update events (only supplied fields change — except `attendees`, which replaces the whole list; omitted attendees are uninvited, so the tool is marked destructive even for calls without `attendees`). Same `sendUpdates` support as insert
 - `calendar_events_delete` — Delete events
 - `calendar_freebusy_query` — Query free/busy information for one or more calendars over a time range
 
