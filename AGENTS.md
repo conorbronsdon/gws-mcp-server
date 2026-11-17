@@ -36,6 +36,7 @@ Most tests are unit tests mocking the executor layer. No test hits the real gws 
 - `errors.test.ts` — Typed error hierarchy, gws error-detail extraction, status mapping
 - `auth.test.ts` — Incremental `auth login` against an in-memory fake token store, plus one run through real child processes with `fixtures/fake-gws.cjs` (a file-backed stand-in for `gws auth status/login`)
 - `annotations.e2e.test.ts` — Real MCP client over an in-memory transport: annotation hints on every tool, `--read-only`, default vs opt-in services, README/server.json counts
+- `drive-download.e2e.test.ts` — `drive_files_download` through a real MCP client and `fixtures/fake-gws-drive.cjs`: text vs. binary handling follows the downloaded (export) MIME type
 - `executor.windows.test.ts` — Windows-only: round-trips argument values through an npm-style `.cmd` shim (`fixtures/argv-dump.cmd`) with `shell: false`
 - `publish-workflow.test.ts` — Registry gate in `.github/workflows/publish.yml`
 
