@@ -29,9 +29,14 @@ jobs:
       # next step but don't block: they never reach the package or the image.
       - name: Audit shipped dependencies (blocking)
         run: npm audit --omit=dev --audit-level=high
+      # Report only: any non-zero exit from the full audit (advisories found,
+      # or npm itself failing, e.g. a registry or network error) becomes a
+      # visible warning annotation on the run instead of failing the job or
+      # passing silently. shell: bash so `||` and the exit status behave the
+      # same on Windows legs as on Linux.
       - name: Audit all dependencies (report only)
-        run: npm audit --audit-level=high
-        continue-on-error: true
+        shell: bash
+        run: npm audit --audit-level=high || echo "::warning title=Dev-dependency advisories::npm audit found high-severity advisories outside the shipped dependency set (report only; see this step's log)"
 
   # Stable aggregation gate: branch protection requires only this one check, so
   # editing the test matrix (OS/node) never orphans a required check name again.
