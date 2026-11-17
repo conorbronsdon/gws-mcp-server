@@ -410,10 +410,15 @@ export function createServer(
           const isGoogleNative = GOOGLE_NATIVE_TYPES.has(fileMimeType);
 
           let cliArgs: string[];
+          // The MIME type of the bytes we actually download: the export format
+          // for Google-native files (a Drawing exports to PNG, a Doc can be
+          // exported to PDF), the stored type otherwise.
+          let contentMimeType = fileMimeType;
 
           if (isGoogleNative) {
             // Use export endpoint for Google-native files
             const exportMime = args.exportMimeType || EXPORT_DEFAULTS[fileMimeType] || "text/plain";
+            contentMimeType = exportMime;
             const exportParams: Record<string, unknown> = {
               fileId: args.fileId,
               mimeType: exportMime,
@@ -443,12 +448,14 @@ export function createServer(
           }
 
           // Determine if content is text or binary
-          const isText = fileMimeType.startsWith("text/")
-            || fileMimeType.includes("json")
-            || fileMimeType.includes("xml")
-            || fileMimeType.includes("yaml")
-            || fileMimeType.includes("csv")
-            || isGoogleNative;
+          // Match XML/JSON by subtype, not substring: Office Open XML types
+          // (application/vnd.openxmlformats-...) contain "xml" but are zip
+          // archives.
+          const subtype = contentMimeType.split(";")[0].trim().toLowerCase().split("/")[1] ?? "";
+          const isText = contentMimeType.startsWith("text/")
+            || ["json", "xml", "yaml", "x-yaml", "csv"].includes(subtype)
+            || subtype.endsWith("+json")
+            || subtype.endsWith("+xml");
 
           let content: string;
           if (isText) {
@@ -462,12 +469,12 @@ export function createServer(
             const saveTo = String(args.savePath);
             copyFileSync(tmpFile, saveTo);
             const stat = readFileSync(saveTo);
-            content = `[Binary file saved: ${saveTo}]\nName: ${fileName}\nType: ${fileMimeType}\nSize: ${stat.length} bytes`;
+            content = `[Binary file saved: ${saveTo}]\nName: ${fileName}\nType: ${contentMimeType}\nSize: ${stat.length} bytes`;
           } else {
             // Binary file without savePath — keep temp file so caller can access it
             keepTmpFile = true;
             const buf = readFileSync(tmpFile);
-            content = `[Binary file: ${fileName} (${fileMimeType}, ${buf.length} bytes)]\nSaved to: ${tmpFile}\n\nTo save to a specific path, call again with the savePath parameter.`;
+            content = `[Binary file: ${fileName} (${contentMimeType}, ${buf.length} bytes)]\nSaved to: ${tmpFile}\n\nTo save to a specific path, call again with the savePath parameter.`;
           }
 
           return {
