@@ -130,6 +130,20 @@ export function failureDetail(stdout: string, stderr: string, code: number | nul
 }
 
 /**
+ * What to tell the user when the gws binary cannot be found. Node's own
+ * `spawn gws ENOENT` names neither the package to install nor the setting
+ * that points at an installed copy.
+ */
+export function gwsNotFoundMessage(gwsBinary: string): string {
+  return (
+    `gws binary "${gwsBinary}" was not found. Install the Google Workspace CLI ` +
+    "(npm install -g @googleworkspace/cli) and authenticate it (gws auth setup " +
+    "or gws auth login; see the README prerequisites), or set GWS_BINARY or " +
+    "--gws-path to the gws binary."
+  );
+}
+
+/**
  * Spawn gws and collect output, enforcing output size limits during
  * accumulation to prevent unbounded memory consumption.
  */
@@ -176,7 +190,9 @@ export function spawnGwsRaw(
       }
     });
 
-    proc.on("error", reject);
+    proc.on("error", (error: NodeJS.ErrnoException) => {
+      reject(error.code === "ENOENT" ? new Error(gwsNotFoundMessage(gwsBinary)) : error);
+    });
     proc.on("close", (code) => {
       if (code === 0) {
         resolve({ stdout, stderr });

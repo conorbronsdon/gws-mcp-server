@@ -11,7 +11,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { spawn } from "node:child_process";
-import { buildArgs, sanitizeUploadPath, executeGws, spawnGwsRaw } from "../executor.js";
+import { buildArgs, sanitizeUploadPath, executeGws, gwsNotFoundMessage, spawnGwsRaw } from "../executor.js";
 import { GwsBinaryConfigurationError } from "../windows-binary.js";
 
 const mockGws = fileURLToPath(new URL("./fixtures/argv-dump.cjs", import.meta.url));
@@ -57,6 +57,43 @@ describe("spawnGwsRaw", () => {
     vi.mocked(spawn).mockClear();
     await expect(spawnGwsRaw(mockGws + ".missing.cmd", [])).rejects.toBeInstanceOf(GwsBinaryConfigurationError);
     expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("names the package to install and GWS_BINARY when the binary is missing (ENOENT)", async () => {
+    const proc = makeFakeProc();
+    vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+    const pending = spawnGwsRaw(mockGws, []);
+    proc.emit("error", Object.assign(new Error("spawn gws ENOENT"), { code: "ENOENT" }));
+    await expect(pending).rejects.toThrow(gwsNotFoundMessage(mockGws));
+    expect(gwsNotFoundMessage("gws")).toBe(
+      'gws binary "gws" was not found. Install the Google Workspace CLI ' +
+        "(npm install -g @googleworkspace/cli) and authenticate it (gws auth setup " +
+        "or gws auth login; see the README prerequisites), or set GWS_BINARY or " +
+        "--gws-path to the gws binary.",
+    );
+  });
+
+  it("passes other spawn errors through unchanged", async () => {
+    const proc = makeFakeProc();
+    vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+    const pending = spawnGwsRaw(mockGws, []);
+    const eacces = Object.assign(new Error("spawn gws EACCES"), { code: "EACCES" });
+    proc.emit("error", eacces);
+    await expect(pending).rejects.toBe(eacces);
+  });
+
+  it("executeGws returns the not-found message as the tool error", async () => {
+    const proc = makeFakeProc();
+    vi.mocked(spawn).mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+    const pending = executeGws(
+      { name: "drive_files_list", description: "test", command: ["drive", "files", "list"], params: [] },
+      {},
+      "gws",
+    );
+    proc.emit("error", Object.assign(new Error("spawn gws ENOENT"), { code: "ENOENT" }));
+    const result = await pending;
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(gwsNotFoundMessage("gws"));
   });
 });
 
