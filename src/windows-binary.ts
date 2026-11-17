@@ -62,7 +62,13 @@ export function resolveGwsCommand(binary: string): GwsCommand {
   if (cached) return cached;
 
   const path = findBinary(binary);
-  if (!path) throw new GwsBinaryConfigurationError(binary, "file not found");
+  if (!path) {
+    throw new GwsBinaryConfigurationError(
+      binary,
+      "file not found. Install the Google Workspace CLI (npm install -g @googleworkspace/cli) " +
+        "and authenticate it (gws auth setup or gws auth login; see the README prerequisites)",
+    );
+  }
 
   let command: GwsCommand;
   switch (extname(path).toLowerCase()) {

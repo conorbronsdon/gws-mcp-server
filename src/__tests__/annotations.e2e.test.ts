@@ -408,6 +408,44 @@ describe("idempotentHint / openWorldHint", () => {
     });
   });
 
+  it("matches the README's annotation claim: four hints on writes, two on reads", () => {
+    // #95: the README said every tool declares all four hints, but reads carry
+    // only readOnlyHint + openWorldHint. Pin both halves of the corrected
+    // claim against tools/list, and pin the README wording to it.
+    const reads = tools.filter((t) => t.annotations?.readOnlyHint === true);
+    const writes = tools.filter((t) => t.annotations?.readOnlyHint === false);
+    expect(reads.length).toBe(29);
+    expect(writes.length).toBe(38);
+    // Every tool is in exactly one bucket: none may omit readOnlyHint, which the
+    // README's read/write split depends on.
+    expect(tools.filter((t) => typeof t.annotations?.readOnlyHint !== "boolean").map((t) => t.name)).toEqual([]);
+    expect(reads.length + writes.length).toBe(tools.length);
+
+    const readsOff = reads
+      .filter((t) => JSON.stringify(t.annotations) !== JSON.stringify({ readOnlyHint: true, openWorldHint: true }))
+      .map((t) => t.name);
+    expect(readsOff).toEqual([]);
+
+    const writesMissingAHint = writes
+      .filter(
+        (t) =>
+          JSON.stringify(Object.keys(t.annotations ?? {}).sort()) !==
+          JSON.stringify(["destructiveHint", "idempotentHint", "openWorldHint", "readOnlyHint"]),
+      )
+      .map((t) => t.name);
+    expect(writesMissingAHint).toEqual([]);
+
+    const readme = readFileSync(new URL("../../README.md", import.meta.url), "utf-8");
+    expect(readme).not.toContain("Every tool declares all four MCP annotation hints");
+    expect(readme).not.toContain("all four MCP annotation hints on every tool,");
+    expect(readme).toContain(
+      "Every write tool declares all four MCP annotation hints — `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` — and every read tool declares `readOnlyHint` and `openWorldHint`",
+    );
+    expect(readme).toContain(
+      "all four MCP annotation hints on every write tool (reads declare `readOnlyHint` and `openWorldHint`)",
+    );
+  });
+
   it("accounts for all 67 tools", () => {
     const reads = tools.filter((t) => t.annotations?.readOnlyHint === true).length;
     const idem = tools.filter((t) => t.annotations?.idempotentHint === true).length;
